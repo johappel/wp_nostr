@@ -20,6 +20,10 @@ class KeyManager
             return;
         }
 
+        if ( ! $this->nostr_service->is_library_available() ) {
+            return;
+        }
+
         if ( get_option( self::OPTION_BLOG_ENCRYPTED_NSEC ) && get_option( self::OPTION_BLOG_NPUB ) ) {
             return;
         }
@@ -42,6 +46,10 @@ class KeyManager
             return;
         }
 
+        if ( ! $this->nostr_service->is_library_available() ) {
+            return;
+        }
+
         $existing = get_user_meta( $user_id, self::META_ENCRYPTED_NSEC, true );
         if ( ! empty( $existing ) ) {
             return;
@@ -56,6 +64,11 @@ class KeyManager
         } catch ( Exception $exception ) {
             error_log( '[nostr-signer] Failed to provision user key: ' . $exception->getMessage() );
         }
+    }
+
+    public function ensure_user_key_exists( int $user_id ): void
+    {
+        $this->create_keys_for_user( $user_id );
     }
 
     public function get_encrypted_user_nsec( int $user_id ): ?string

@@ -75,4 +75,22 @@ class NostrService
             'content'    => $event->getContent(),
         ];
     }
+
+    public function convertBech32ToHex( ?string $key ): ?string
+    {
+        if ( $key === null || $key === '' ) {
+            return null;
+        }
+
+        if ( ! $this->is_library_available() ) {
+            return null;
+        }
+
+        try {
+            $converter = new Key();
+            return $converter->convertToHex( $key );
+        } catch ( \Throwable ) {
+            return null;
+        }
+    }
 }

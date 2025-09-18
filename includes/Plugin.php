@@ -3,6 +3,7 @@
 namespace NostrSigner;
 
 use NostrSigner\Admin\AdminPage;
+use NostrSigner\Frontend\DemoPage;
 use NostrSigner\Rest\SignEventController;
 
 class Plugin
@@ -13,6 +14,7 @@ class Plugin
     private KeyManager $key_manager;
     private SignEventController $rest_controller;
     private AdminPage $admin_page;
+    private DemoPage $demo_page;
 
     private bool $gmp_available;
 
@@ -33,6 +35,7 @@ class Plugin
         $this->key_manager     = new KeyManager( $this->nostr_service );
         $this->rest_controller = new SignEventController( $this->key_manager, $this->nostr_service );
         $this->admin_page      = new AdminPage( $this->nostr_service );
+        $this->demo_page       = new DemoPage();
 
         add_action( 'admin_notices', [ $this, 'maybe_render_master_key_notice' ] );
         add_action( 'admin_notices', [ $this, 'maybe_render_gmp_notice' ] );
@@ -41,7 +44,10 @@ class Plugin
         add_action( 'rest_api_init', [ $this->rest_controller, 'register_routes' ] );
         add_action( 'admin_menu', [ $this->admin_page, 'register_admin_page' ] );
 
+        $this->demo_page->boot();
+
         register_activation_hook( NOSTR_SIGNER_PLUGIN_FILE, [ $this, 'handle_activation' ] );
+        register_deactivation_hook( NOSTR_SIGNER_PLUGIN_FILE, [ $this, 'handle_deactivation' ] );
     }
 
     public function init_hooks(): void
@@ -84,7 +90,15 @@ class Plugin
             wp_die( esc_html__( 'Aktivierung abgebrochen: Die PHP-Erweiterung GMP ist erforderlich.', 'nostr-signer' ) );
         }
 
+        $this->demo_page->register_rewrite();
+        flush_rewrite_rules();
+
         $this->key_manager->ensure_blog_key_exists();
+    }
+
+    public function handle_deactivation(): void
+    {
+        flush_rewrite_rules();
     }
 
     public function handle_user_register( int $user_id ): void

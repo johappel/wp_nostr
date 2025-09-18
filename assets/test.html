@@ -1,0 +1,209 @@
+<!doctype html>
+<html lang="de">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Nostr Signer Test</title>
+    <style>
+        :root {
+            color-scheme: light dark;
+        }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+            margin: 2rem auto;
+            max-width: 960px;
+            padding: 0 1.5rem 2rem;
+            background: #f8fafc;
+            color: #1f2937;
+        }
+        h1, h2 {
+            color: #111827;
+        }
+        section {
+            background: #ffffff;
+            border-radius: 8px;
+            box-shadow: 0 1px 3px rgba(15, 23, 42, 0.08);
+            padding: 1.5rem;
+            margin-bottom: 1.5rem;
+        }
+        textarea {
+            width: 100%;
+            min-height: 140px;
+            font-family: ui-monospace, SFMono-Regular, SFMono, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+            font-size: 0.95rem;
+            padding: 0.75rem;
+            border-radius: 6px;
+            border: 1px solid #cbd5f5;
+            box-sizing: border-box;
+            resize: vertical;
+        }
+        label {
+            display: inline-block;
+            margin-right: 1rem;
+        }
+        select, button {
+            font-size: 1rem;
+            padding: 0.6rem 1.1rem;
+            border-radius: 6px;
+            border: 1px solid #4c51bf;
+            background-color: #4338ca;
+            color: #ffffff;
+            cursor: pointer;
+        }
+        button.secondary {
+            background: #f3f4f6;
+            border-color: #d1d5db;
+            color: #111827;
+        }
+        button:disabled {
+            opacity: 0.55;
+            cursor: not-allowed;
+        }
+        pre {
+            background: #0f172a;
+            color: #f8fafc;
+            padding: 1rem;
+            border-radius: 6px;
+            overflow-x: auto;
+            white-space: pre-wrap;
+            word-wrap: break-word;
+        }
+        .flex {
+            display: flex;
+            gap: 1rem;
+            flex-wrap: wrap;
+            align-items: center;
+        }
+        .muted {
+            color: #6b7280;
+            font-size: 0.9rem;
+        }
+    </style>
+</head>
+<body>
+    <h1>Nostr Signer Testseite</h1>
+    <p class="muted">Diese Seite nutzt die REST-API des Plugins, um Profildaten abzurufen und Events signieren zu lassen.</p>
+
+    <section>
+        <div class="flex" style="justify-content: space-between;">
+            <h2>1. Profilinformationen laden (/me)</h2>
+            <button id="load-me" class="secondary">/me abrufen</button>
+        </div>
+        <pre id="me-output">Noch keine Daten geladen.</pre>
+    </section>
+
+    <section>
+        <h2>2. Event vorbereiten</h2>
+        <p class="muted">Der Inhalt wird als Text-Event (Kind 1) signiert.</p>
+        <textarea id="event-content" placeholder="Nachricht eingeben, die signiert werden soll."></textarea>
+        <div class="flex" style="margin-top: 1rem;">
+            <label>
+                Signieren mit:
+                <select id="key-type">
+                    <option value="user">Eigenem Benutzer-Schl?ssel</option>
+                    <option value="blog">Blog-Schl?ssel</option>
+                </select>
+            </label>
+            <button id="sign-event">Event signieren</button>
+        </div>
+        <pre id="sign-output">Noch kein Signaturversuch gestartet.</pre>
+    </section>
+
+    <script>
+        const NostrSignerDemo = __CONFIG_JSON__;
+
+        const ui = {
+            loadMeButton: document.getElementById('load-me'),
+            meOutput: document.getElementById('me-output'),
+            signButton: document.getElementById('sign-event'),
+            signOutput: document.getElementById('sign-output'),
+            textarea: document.getElementById('event-content'),
+            keyType: document.getElementById('key-type'),
+        };
+
+        const prettyPrint = (data) => JSON.stringify(data, null, 2);
+
+        async function fetchJson(url, options = {}) {
+            const config = {
+                credentials: 'include',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-WP-Nonce': NostrSignerDemo.nonce,
+                },
+                ...options,
+            };
+
+            const response = await fetch(url, config);
+            let body = null;
+            try {
+                body = await response.json();
+            } catch (err) {
+                body = { message: 'Antwort konnte nicht geparst werden.' };
+            }
+
+            if (!response.ok) {
+                const message = body && body.message ? body.message : 'Unbekannter Fehler';
+                throw new Error(message);
+            }
+
+            return body;
+        }
+
+        async function loadProfile() {
+            ui.loadMeButton.disabled = true;
+            ui.meOutput.textContent = 'Lade /me ...';
+            try {
+                const data = await fetchJson(NostrSignerDemo.meUrl, { method: 'GET' });
+                ui.meOutput.textContent = prettyPrint(data);
+            } catch (err) {
+                ui.meOutput.textContent = 'Fehler: ' + err.message;
+            } finally {
+                ui.loadMeButton.disabled = false;
+            }
+        }
+
+        async function signEvent() {
+            const content = ui.textarea.value.trim();
+            if (!content) {
+                ui.signOutput.textContent = 'Bitte zuerst Inhalt eingeben.';
+                ui.textarea.focus();
+                return;
+            }
+
+            ui.signButton.disabled = true;
+            ui.signOutput.textContent = 'Sende Event zur Signatur ...';
+
+            const eventPayload = {
+                kind: 1,
+                created_at: Math.floor(Date.now() / 1000),
+                tags: [],
+                content,
+            };
+
+            try {
+                const body = await fetchJson(NostrSignerDemo.signUrl, {
+                    method: 'POST',
+                    body: JSON.stringify({
+                        event_data: JSON.stringify(eventPayload),
+                        key_type: ui.keyType.value,
+                    }),
+                });
+
+                ui.signOutput.textContent = prettyPrint(body);
+            } catch (err) {
+                ui.signOutput.textContent = 'Fehler: ' + err.message;
+            } finally {
+                ui.signButton.disabled = false;
+            }
+        }
+
+        ui.loadMeButton.addEventListener('click', loadProfile);
+        ui.signButton.addEventListener('click', signEvent);
+
+        // Automatisch versuchen, das Profil zu laden, sobald die Seite bereit ist.
+        document.addEventListener('DOMContentLoaded', () => {
+            loadProfile();
+        });
+    </script>
+</body>
+</html>
