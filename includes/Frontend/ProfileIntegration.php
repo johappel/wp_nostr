@@ -32,17 +32,9 @@ class ProfileIntegration
         wp_enqueue_script( 'nostr-signer-import' );
         wp_enqueue_script( 'nostr-signer-profile' );
 
-        $temp_key_hex     = hash_hmac( 'sha256', wp_get_session_token(), NOSTR_SIGNER_MASTER_KEY );
-        $current_user_id  = get_current_user_id();
-        $npub             = $this->key_manager->get_user_npub( $current_user_id );
-        $author_url       = get_author_posts_url( $current_user_id );
-        $profile_user     = get_userdata( $current_user_id );
-        $display_name     = $profile_user ? (string) $profile_user->display_name : '';
-        $name             = $profile_user ? (string) $profile_user->user_login : '';
-        $about            = $profile_user ? (string) $profile_user->description : '';
-        $website          = $profile_user ? (string) $profile_user->user_url : '';
-        $picture          = get_avatar_url( $current_user_id ) ?: '';
-        $nip05            = get_user_meta( $current_user_id, 'nostr_nip05', true );
+        $temp_key_hex    = hash_hmac( 'sha256', wp_get_session_token(), NOSTR_SIGNER_MASTER_KEY );
+        $current_user_id = get_current_user_id();
+        $npub            = $this->key_manager->get_user_npub( $current_user_id );
 
         wp_localize_script(
             'nostr-signer-import',
@@ -61,15 +53,26 @@ class ProfileIntegration
             ]
         );
 
+        $profile_user = get_userdata( $current_user_id );
+        $display_name = $profile_user ? (string) $profile_user->display_name : '';
+        $name         = $profile_user ? (string) $profile_user->user_login : '';
+        $about        = $profile_user ? (string) $profile_user->description : '';
+        $website      = $profile_user ? (string) $profile_user->user_url : '';
+        $picture      = get_avatar_url( $current_user_id ) ?: '';
+        $nip05        = get_user_meta( $current_user_id, 'nostr_nip05', true );
+        $nip05        = is_string( $nip05 ) ? $nip05 : '';
+        $author_url   = get_author_posts_url( $current_user_id );
+
         wp_localize_script(
             'nostr-signer-profile',
             'NostrSignerProfileData',
             [
-                'enabled'     => Crypto::is_master_key_available() && $this->nostr_service->is_library_available(),
-                'formId'      => 'nostr-signer-profile-form',
-                'buttonId'    => 'nostr-signer-profile-publish',
-                'statusId'    => 'nostr-signer-profile-status',
-                'fields'      => [
+                'enabled'      => Crypto::is_master_key_available() && $this->nostr_service->is_library_available(),
+                'formId'       => 'nostr-signer-profile-form',
+                'buttonId'     => 'nostr-signer-profile-publish',
+                'syncButtonId' => 'nostr-signer-profile-sync',
+                'statusId'     => 'nostr-signer-profile-status',
+                'fields'       => [
                     'name'         => 'nostr-profile-name',
                     'display_name' => 'nostr-profile-display-name',
                     'about'        => 'nostr-profile-about',
@@ -77,19 +80,24 @@ class ProfileIntegration
                     'picture'      => 'nostr-profile-picture',
                     'nip05'        => 'nostr-profile-nip05',
                 ],
-                'initial'    => [
+                'initial'   => [
                     'name'         => $name,
                     'display_name' => $display_name,
                     'about'        => $about,
                     'website'      => $website,
                     'picture'      => $picture,
-                    'nip05'        => is_string( $nip05 ) ? $nip05 : '',
+                    'nip05'        => $nip05,
                 ],
-                'signUrl'     => rest_url( 'nostr-signer/v1/sign-event' ),
-                'nonce'       => wp_create_nonce( 'wp_rest' ),
-                'authorUrl'   => $author_url,
-                'relays'      => $this->relays,
-                'keyType'     => 'user',
+                'wpFields'  => [
+                    'display_name' => 'display_name',
+                    'about'        => 'description',
+                    'website'      => 'url',
+                ],
+                'signUrl'    => rest_url( 'nostr-signer/v1/sign-event' ),
+                'nonce'      => wp_create_nonce( 'wp_rest' ),
+                'authorUrl'  => $author_url,
+                'relays'     => $this->relays,
+                'keyType'    => 'user',
             ]
         );
     }
@@ -108,9 +116,14 @@ class ProfileIntegration
         $picture_url = get_avatar_url( $user->ID );
         $picture_url = is_string( $picture_url ) ? $picture_url : '';
         $nip05       = get_user_meta( $user->ID, 'nostr_nip05', true );
-        $nip05       = is_string( $nip05 ) ? $nip05 : '';
+        $nip05       = is_string( $nip05 ) && $nip05 !== '' ? $nip05 : '';
+
+        $domain         = wp_parse_url( home_url(), PHP_URL_HOST ) ?: '';
+        $fallback_nip05 = $user->user_nicename . '@' . $domain;
+        $nip05_display  = $nip05 !== '' ? $nip05 : $fallback_nip05;
 
         echo '<p>' . esc_html__( 'Aktueller oeffentlicher Schluessel (npub):', 'nostr-signer' ) . ' <code id="nostr-signer-user-npub">' . ( $npub ? esc_html( $npub ) : esc_html__( 'Noch nicht hinterlegt', 'nostr-signer' ) ) . '</code></p>';
+        echo '<p>' . esc_html__( 'NIP-05 Adresse:', 'nostr-signer' ) . ' <code>' . esc_html( $nip05_display ) . '</code></p>';
 
         echo '<h3>' . esc_html__( 'Nostr-Profil', 'nostr-signer' ) . '</h3>';
         echo '<form id="nostr-signer-profile-form">';
@@ -143,12 +156,13 @@ class ProfileIntegration
 
         echo '<tr>';
         echo '<th scope="row"><label for="nostr-profile-nip05">' . esc_html__( 'NIP-05', 'nostr-signer' ) . '</label></th>';
-        echo '<td><input type="text" class="regular-text" id="nostr-profile-nip05" value="' . esc_attr( $nip05 ) . '" /></td>';
+        echo '<td><input type="text" class="regular-text" id="nostr-profile-nip05" value="' . esc_attr( $nip05_display ) . '" /></td>';
         echo '</tr>';
 
         echo '</table>';
         echo '<p class="description">' . esc_html__( 'Relays fuer die Veroeffentlichung:', 'nostr-signer' ) . ' ' . esc_html( implode( ', ', $this->relays ) ) . '</p>';
         echo '<p class="description" id="nostr-signer-profile-status"></p>';
+        echo '<p><button type="button" class="button" id="nostr-signer-profile-sync">' . esc_html__( 'Profilfelder aus WordPress uebernehmen', 'nostr-signer' ) . '</button></p>';
         echo '<p><button type="submit" class="button button-primary" id="nostr-signer-profile-publish">' . esc_html__( 'Nostr-Profil auf Relays veroeffentlichen', 'nostr-signer' ) . '</button></p>';
         echo '</form>';
 

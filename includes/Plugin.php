@@ -5,6 +5,8 @@ namespace NostrSigner;
 use NostrSigner\Admin\AdminPage;
 use NostrSigner\Frontend\DemoPage;
 use NostrSigner\Frontend\ProfileIntegration;
+use NostrSigner\Frontend\WellKnownEndpoint;
+use NostrSigner\RelayPublisher;
 use NostrSigner\Rest\ImportKeyController;
 use NostrSigner\Rest\SignEventController;
 
@@ -26,6 +28,7 @@ class Plugin
     private AdminPage $admin_page;
     private DemoPage $demo_page;
     private ProfileIntegration $profile_integration;
+    private WellKnownEndpoint $well_known_endpoint;
 
     private bool $gmp_available;
 
@@ -42,17 +45,19 @@ class Plugin
     {
         $this->gmp_available = extension_loaded( 'gmp' );
 
-        $this->nostr_service     = new NostrService();
-        $this->key_manager       = new KeyManager( $this->nostr_service );
-        $this->relay_publisher   = new RelayPublisher( self::DEFAULT_RELAYS );
-        $this->rest_controller   = new SignEventController( $this->key_manager, $this->nostr_service, $this->relay_publisher );
-        $this->import_controller = new ImportKeyController( $this->key_manager, $this->nostr_service );
-        $this->admin_page        = new AdminPage( $this->nostr_service );
-        $this->demo_page         = new DemoPage();
+        $this->nostr_service       = new NostrService();
+        $this->key_manager         = new KeyManager( $this->nostr_service );
+        $this->relay_publisher     = new RelayPublisher( self::DEFAULT_RELAYS );
+        $this->rest_controller     = new SignEventController( $this->key_manager, $this->nostr_service, $this->relay_publisher );
+        $this->import_controller   = new ImportKeyController( $this->key_manager, $this->nostr_service );
+        $this->admin_page          = new AdminPage( $this->nostr_service );
+        $this->demo_page           = new DemoPage();
         $this->profile_integration = new ProfileIntegration( $this->key_manager, $this->nostr_service, self::DEFAULT_RELAYS );
+        $this->well_known_endpoint = new WellKnownEndpoint( $this->key_manager, $this->nostr_service, self::DEFAULT_RELAYS );
 
         add_action( 'admin_enqueue_scripts', [ $this, 'register_admin_assets' ], 0 );
         $this->profile_integration->boot();
+        $this->well_known_endpoint->boot();
 
         add_action( 'admin_notices', [ $this, 'maybe_render_master_key_notice' ] );
         add_action( 'admin_notices', [ $this, 'maybe_render_gmp_notice' ] );
@@ -73,7 +78,7 @@ class Plugin
         if ( ! wp_script_is( 'nostr-tools', 'registered' ) ) {
             wp_register_script(
                 'nostr-tools',
-                'https://unpkg.com/nostr-tools@2.3.1/lib/nostr-tools.min.js',
+                'https://cdn.jsdelivr.net/npm/nostr-tools@2.16.2/lib/nostr.bundle.min.js',
                 [],
                 '2.3.1',
                 true
@@ -142,6 +147,7 @@ class Plugin
         }
 
         $this->demo_page->register_rewrite();
+        $this->well_known_endpoint->add_rewrite_rule();
         flush_rewrite_rules();
 
         $this->key_manager->ensure_blog_key_exists();
