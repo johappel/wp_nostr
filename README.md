@@ -329,6 +329,51 @@ add_action('wp_enqueue_scripts', 'nostr_enqueue_spa_prod');
 - Logging: Überwachen Sie fehlgeschlagene Signatur- bzw. Import-Versuche (dieses Plugin gibt WP-Fehler zurück — erweitern Sie bei Bedarf um Logging).
 - Minimale Lebenszeit des entschlüsselten `nsec` im RAM: das Plugin unsetzt die Klartext-Variable; bestätigen Sie dies in Betriebsprüfungen.
 
+Weitere, ausführliche Hinweise zu Backup, Rotation und Notfallmaßnahmen findest du in `SECURITY.md`.
+
+## WP-CLI Kommandos
+
+Das Plugin stellt eine Reihe von WP-CLI-Helpers bereit, um Backups, Rotation und Wiederherstellung zu unterstützen. Die Commands sind verfügbar, wenn sich die WP-Installation mit WP-CLI aufruft.
+
+- `wp nostrsigner backup <file>` — Exportiert alle verschlüsselten `nsec`-Werte (Blog + Benutzer) in eine JSON-Datei.
+- `wp nostrsigner keygen` — Erzeugt einen empfohlenen neuen Master-Key (Ausgabe auf der Konsole). Setze diesen in `wp-config.php` bevor du `recrypt` ausführst.
+- `wp nostrsigner recrypt <old_key> <new_key>` — Rekryptiert alle gespeicherten `nsec`-Werte von `old_key` auf `new_key`.
+- `wp nostrsigner rotate --old=<old_key> --new=<new_key>` — Wrapper, der `recrypt` mit den angegebenen Werten ausführt.
+- `wp nostrsigner restore <file>` — Stellt die in `<file>` gespeicherte JSON-Backup-Datei wieder her (überschreibt Optionen und user_meta für verschlüsselte nsec).
+
+Wichtig: Behandle die Schlüssel (alte und neue) vertraulich. Setze den neuen Master-Key in `wp-config.php` bevor du `recrypt` ausführst. Führe immer ein verschlüsseltes DB-Backup durch, bevor du re-encrypting/Rollback-Operationen startest.
+
+
+## Wichtige Klarstellungen und Empfehlungen
+
+- Authentifizierung: Die Signatur-API verwendet die WordPress-Authentifizierung (eingeloggte Benutzer) und Nonce-basierte CSRF-Prüfung. Das bedeutet, dass die Kontrolle über Signier-Anfragen an die WordPress-Benutzerkonten gebunden ist — nicht an Nostr-Identitäten.
+- Keine Schlüssel an den Client: Weder verschlüsselte noch entschlüsselte `nsec`-Werte werden an den Browser gesendet. Alle Signieroperationen finden serverseitig statt.
+- Rechte & Rollen: Standardmäßig dürfen eingeloggte Benutzer Signatur-Anfragen stellen. Wenn du restriktivere Regeln willst (z. B. nur Autoren/Admins für `blog`-Signaturen), erweitere die `permission_check()`-Logik oder prüfe Benutzer-Capabilities beim Anfordern von `key_type === 'blog'`.
+- Audit & Logging: Implementiere ein Audit-Log für Signatur-Aktionen (wer hat wann signiert, welcher `key_type`, ob Broadcast erfolgte). Vermeide das Loggen sensibler Inhalte wie Klartext-`nsec`.
+- Rate-Limiting: Füge serverseitiges Rate-Limiting pro Benutzer/IP hinzu, um Missbrauch zu begrenzen (z. B. transient-basierte Zähler oder Integration mit einem Reverse-Proxy / WAF).
+- Input-Validierung: Validere `event`-Felder (z. B. `kind` als Integer, `tags` als Array von Arrays), um fehlerhafte Requests und mögliche Ausnutzungen der Nostr-Library zu verhindern.
+- Schlüsselrotation & Backup: Dokumentiere Prozesse für Schlüssel-Rotation und sichere Backups der `wp_options`/`user_meta`-Werte (nur verschlüsselte `nsec` speichern). Plane einen Ablauf für den Fall, dass `NOSTR_SIGNER_MASTER_KEY` kompromittiert wird.
+- Import-Flow: Der temporäre Schlüssel für den Import wird aus der Session abgeleitet und ist nur kurz gültig. Stelle sicher, dass Clients und Admins verstehen, dass der temporäre Schlüssel kein Ersatz für den Master-Key ist und NIE an Clients weitergegeben wird.
+
+## Ankündigungstext für das Plugin
+
+Neu: Nostr Signer — sichere Server-seitige Signaturen für Nostr in WordPress
+
+Mit dem Nostr Signer Plugin kannst du jetzt Nostr-Events direkt aus deinem WordPress-Blog heraus signieren, ohne Private Keys im Browser zu speichern. Das Plugin verwaltet pro-Benutzer Schlüsselpaare sowie ein optionales globales Blog-Schlüsselpaar, verschlüsselt private Schlüssel sicher in der Datenbank und stellt REST-API-Endpunkte bereit, über die eingeloggte Benutzer Events signieren und (optional) an Relays senden können.
+
+Kurz: sichere Signaturen, volle Kontrolle über Benutzerzugriff via WordPress-Accounts, und einfache Integration für Web-Apps oder Frontend-SPAs.
+
+Features im Überblick:
+- Server-seitiges Signieren von Nostr-Events (user- oder blog-Keys)
+- Verschlüsselte Speicherung von `nsec` mit einem Master-Key in `wp-config.php`
+- REST-API (`/nostr-signer/v1/sign-event`, `/me`, `/import-key`) mit Nonce- und Session-Protection
+- Optionales Broadcast an konfigurierte Relays
+- Demo-Frontend und SPA-Beispiele zur einfachen Integration
+
+TODO:
+- Rate-Limits
+- Backup/Rotation
+
 
 
 ---

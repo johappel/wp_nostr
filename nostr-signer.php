@@ -43,6 +43,13 @@ spl_autoload_register( function ( $class ) {
 
 NostrSigner\Plugin::instance()->boot();
 
+if ( defined( 'WP_CLI' ) && WP_CLI ) {
+    $cli_file = __DIR__ . '/includes/CLI/Commands.php';
+    if ( file_exists( $cli_file ) ) {
+        require_once $cli_file;
+    }
+}
+
 if ( ! function_exists( 'nostr_signer_encrypt' ) ) {
     function nostr_signer_encrypt( string $plaintext ): string {
         return NostrSigner\Crypto::encrypt( $plaintext );
