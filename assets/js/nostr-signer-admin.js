@@ -43,20 +43,19 @@
                     "X-WP-Nonce": NostrSignerAdmin.nonce,
                 },
                 body: JSON.stringify({
-                    event_data: JSON.stringify(eventPayload),
+                    event: eventPayload,
                     key_type: keyType,
                 }),
                 credentials: "same-origin",
             });
 
+            const data = await response.json();
             if (!response.ok) {
-                const errorData = await response.json().catch(() => ({}));
-                const message = errorData.message || "Signierung fehlgeschlagen.";
+                const message = data && data.message ? data.message : "Signierung fehlgeschlagen.";
                 renderMessage(message);
                 return;
             }
 
-            const data = await response.json();
             renderMessage(JSON.stringify(data, null, 2));
         } catch (err) {
             renderMessage("Ein unerwarteter Fehler ist aufgetreten: " + err.message);

@@ -184,7 +184,7 @@
                 const body = await fetchJson(NostrSignerDemo.signUrl, {
                     method: 'POST',
                     body: JSON.stringify({
-                        event_data: JSON.stringify(eventPayload),
+                        event: eventPayload,
                         key_type: ui.keyType.value,
                     }),
                 });
@@ -207,3 +207,4 @@
     </script>
 </body>
 </html>
+

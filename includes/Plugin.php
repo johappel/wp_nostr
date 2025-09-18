@@ -10,12 +10,19 @@ use NostrSigner\Rest\SignEventController;
 
 class Plugin
 {
+    private const DEFAULT_RELAYS = [
+        'wss://relay.damus.io',
+        'wss://relay.nostr.band',
+        'wss://nostr.fmt.wiz.biz',
+    ];
+
     private static ?Plugin $instance = null;
 
     private NostrService $nostr_service;
     private KeyManager $key_manager;
     private SignEventController $rest_controller;
     private ImportKeyController $import_controller;
+    private RelayPublisher $relay_publisher;
     private AdminPage $admin_page;
     private DemoPage $demo_page;
     private ProfileIntegration $profile_integration;
@@ -35,13 +42,14 @@ class Plugin
     {
         $this->gmp_available = extension_loaded( 'gmp' );
 
-        $this->nostr_service       = new NostrService();
-        $this->key_manager         = new KeyManager( $this->nostr_service );
-        $this->rest_controller     = new SignEventController( $this->key_manager, $this->nostr_service );
-        $this->import_controller   = new ImportKeyController( $this->key_manager, $this->nostr_service );
-        $this->admin_page          = new AdminPage( $this->nostr_service );
-        $this->demo_page           = new DemoPage();
-        $this->profile_integration = new ProfileIntegration( $this->key_manager, $this->nostr_service );
+        $this->nostr_service     = new NostrService();
+        $this->key_manager       = new KeyManager( $this->nostr_service );
+        $this->relay_publisher   = new RelayPublisher( self::DEFAULT_RELAYS );
+        $this->rest_controller   = new SignEventController( $this->key_manager, $this->nostr_service, $this->relay_publisher );
+        $this->import_controller = new ImportKeyController( $this->key_manager, $this->nostr_service );
+        $this->admin_page        = new AdminPage( $this->nostr_service );
+        $this->demo_page         = new DemoPage();
+        $this->profile_integration = new ProfileIntegration( $this->key_manager, $this->nostr_service, self::DEFAULT_RELAYS );
 
         add_action( 'admin_enqueue_scripts', [ $this, 'register_admin_assets' ], 0 );
         $this->profile_integration->boot();
@@ -65,7 +73,7 @@ class Plugin
         if ( ! wp_script_is( 'nostr-tools', 'registered' ) ) {
             wp_register_script(
                 'nostr-tools',
-                'https://cdn.jsdelivr.net/npm/nostr-tools@2.16.2/lib/nostr.bundle.min.js',
+                'https://unpkg.com/nostr-tools@2.3.1/lib/nostr-tools.min.js',
                 [],
                 '2.3.1',
                 true
@@ -76,6 +84,16 @@ class Plugin
             wp_register_script(
                 'nostr-signer-import',
                 NOSTR_SIGNER_PLUGIN_URL . 'assets/js/nostr-signer-import.js',
+                [ 'nostr-tools' ],
+                NOSTR_SIGNER_PLUGIN_VERSION,
+                true
+            );
+        }
+
+        if ( ! wp_script_is( 'nostr-signer-profile', 'registered' ) ) {
+            wp_register_script(
+                'nostr-signer-profile',
+                NOSTR_SIGNER_PLUGIN_URL . 'assets/js/nostr-signer-profile.js',
                 [ 'nostr-tools' ],
                 NOSTR_SIGNER_PLUGIN_VERSION,
                 true

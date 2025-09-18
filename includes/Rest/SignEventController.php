@@ -5,6 +5,7 @@ namespace NostrSigner\Rest;
 use NostrSigner\Crypto;
 use NostrSigner\KeyManager;
 use NostrSigner\NostrService;
+use NostrSigner\RelayPublisher;
 use RuntimeException;
 use WP_Error;
 use WP_REST_Request;
@@ -12,7 +13,7 @@ use WP_REST_Response;
 
 class SignEventController
 {
-    public function __construct( private KeyManager $key_manager, private NostrService $nostr_service ) {
+    public function __construct( private KeyManager $key_manager, private NostrService $nostr_service, private RelayPublisher $relay_publisher ) {
     }
 
     public function register_routes(): void
@@ -25,14 +26,18 @@ class SignEventController
                 'callback'            => [ $this, 'handle_sign_event' ],
                 'permission_callback' => [ $this, 'permission_check' ],
                 'args'                => [
-                    'event_data' => [
+                    'event' => [
                         'required' => true,
-                        'type'     => 'string',
+                        'type'     => 'object',
                     ],
                     'key_type' => [
                         'required' => true,
                         'type'     => 'string',
                         'enum'     => [ 'user', 'blog' ],
+                    ],
+                    'broadcast' => [
+                        'required' => false,
+                        'type'     => 'boolean',
                     ],
                 ],
             ]
@@ -69,12 +74,18 @@ class SignEventController
             return new WP_Error( 'nostr_signer_nonce_invalid', __( 'Ungueltiger Sicherheits-Nonce.', 'nostr-signer' ), [ 'status' => 403 ] );
         }
 
-        $event_json = $request->get_param( 'event_data' );
-        $key_type   = $request->get_param( 'key_type' );
+        $raw_event = $request->get_param( 'event' );
+        if ( is_string( $raw_event ) ) {
+            $decoded = json_decode( $raw_event, true );
+            $event_payload = is_array( $decoded ) ? $decoded : null;
+        } elseif ( is_array( $raw_event ) ) {
+            $event_payload = $raw_event;
+        } else {
+            $event_payload = null;
+        }
 
-        $event_payload = json_decode( $event_json, true );
         if ( ! is_array( $event_payload ) ) {
-            return new WP_Error( 'nostr_signer_invalid_event', __( 'Das bereitgestellte Event ist kein gueltiges JSON.', 'nostr-signer' ), [ 'status' => 400 ] );
+            return new WP_Error( 'nostr_signer_invalid_event', __( 'Das bereitgestellte Event ist ungueltig.', 'nostr-signer' ), [ 'status' => 400 ] );
         }
 
         $current_user_id = get_current_user_id();
@@ -82,11 +93,46 @@ class SignEventController
             return new WP_Error( 'nostr_signer_no_user', __( 'Kein angemeldeter Benutzer gefunden.', 'nostr-signer' ), [ 'status' => 403 ] );
         }
 
-        $encrypted_nsec = null;
+        $key_type = $request->get_param( 'key_type' );
+
+        if ( ! isset( $event_payload['kind'] ) ) {
+            $event_payload['kind'] = 1;
+        }
+
+        if ( ! isset( $event_payload['created_at'] ) ) {
+            $event_payload['created_at'] = time();
+        }
+
+        $event_payload['kind']       = (int) $event_payload['kind'];
+        $event_payload['created_at'] = (int) $event_payload['created_at'];
+
+        $author_url = $key_type === 'blog'
+            ? home_url( '/' )
+            : get_author_posts_url( $current_user_id );
+
+        $tags = [];
+        if ( isset( $event_payload['tags'] ) && is_array( $event_payload['tags'] ) ) {
+            $tags = $event_payload['tags'];
+        }
+
+        $has_r_tag = false;
+        foreach ( $tags as $tag ) {
+            if ( is_array( $tag ) && isset( $tag[0], $tag[1] ) && $tag[0] === 'r' && $tag[1] === $author_url ) {
+                $has_r_tag = true;
+                break;
+            }
+        }
+
+        if ( ! $has_r_tag ) {
+            $tags[] = [ 'r', $author_url ];
+        }
+
+        $event_payload['tags'] = $tags;
+
         if ( $key_type === 'user' ) {
             $this->key_manager->ensure_user_key_exists( $current_user_id );
             $encrypted_nsec = $this->key_manager->get_encrypted_user_nsec( $current_user_id );
-        } elseif ( $key_type === 'blog' ) {
+        } else {
             $this->key_manager->ensure_blog_key_exists();
             $encrypted_nsec = $this->key_manager->get_encrypted_blog_nsec();
         }
@@ -100,6 +146,8 @@ class SignEventController
             return new WP_Error( 'nostr_signer_decrypt_failed', __( 'Der Schluessel konnte nicht entschluesselt werden.', 'nostr-signer' ), [ 'status' => 500 ] );
         }
 
+        $event_payload['content'] = isset( $event_payload['content'] ) ? (string) $event_payload['content'] : '';
+
         try {
             $signed_event = $this->nostr_service->signEvent( $event_payload, $nsec_plain );
         } catch ( RuntimeException $exception ) {
@@ -109,7 +157,24 @@ class SignEventController
 
         unset( $nsec_plain );
 
-        return new WP_REST_Response( $signed_event, 200 );
+        $broadcast = filter_var( $request->get_param( 'broadcast' ), FILTER_VALIDATE_BOOLEAN );
+        $relay_responses = [];
+
+        if ( $broadcast ) {
+            $relay_responses = $this->relay_publisher->publish( $signed_event );
+        }
+
+        $signed_event['tags'] = $event_payload['tags'];
+
+        return new WP_REST_Response(
+            [
+                'event'            => $signed_event,
+                'broadcast'        => $broadcast,
+                'relay_responses'  => $relay_responses,
+                'key_type'         => $key_type,
+            ],
+            200
+        );
     }
 
     public function handle_get_me( WP_REST_Request $request )
