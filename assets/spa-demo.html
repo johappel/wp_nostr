@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Nostr Signer SPA (Single Page Application) Demo</title>
+  <style>
+    body{font-family:system-ui,Segoe UI,Roboto,Helvetica,Arial,sans-serif;margin:2rem}
+    textarea{width:100%;min-height:120px}
+    pre{background:#111;color:#eee;padding:1rem;border-radius:6px;overflow:auto}
+    label{display:block;margin:0.5rem 0}
+    .row{display:flex;gap:0.5rem;align-items:center}
+  </style>
+</head>
+<body>
+  <h1>Nostr Signer — SPA Demo</h1>
+  <p class="muted">Diese Demo erwartet, dass WordPress den Nonce und die API-Basis-URL in <code>window.NostrSignerConfig</code> injiziert (siehe README).</p>
+
+  <section>
+    <h2>Profil laden</h2>
+    <button id="btn-me">/me laden</button>
+    <pre id="me-output">Noch keine Daten geladen.</pre>
+  </section>
+
+  <section>
+    <h2>Event signieren & publizieren</h2>
+    <label>Relay-URL: <input id="relay-url" value="wss://relay.damus.io" class="input-wide" /></label>
+
+    <div class="row">
+      <label style="flex:1">Signieren mit:
+        <select id="key-type">
+          <option value="user">Benutzer-Key</option>
+          <option value="blog">Blog-Key</option>
+        </select>
+      </label>
+      <label style="width:120px">Kind:
+        <input id="event-kind" type="number" value="1" min="0" />
+      </label>
+    </div>
+
+    <label>Tags (JSON-Array oder eine Zeile pro Tag im Format tag,value):</label>
+    <textarea id="event-tags" placeholder='z.B. [["r","https://example.org"]]  oder  "r,https://example.org" in neuer Zeile'></textarea>
+
+    <label>Inhalt:</label>
+    <textarea id="event-content" placeholder="Nachricht eingeben..."></textarea>
+
+    <div class="row action-row">
+      <button id="btn-sign-publish">Signieren & Publizieren</button>
+      <button id="btn-sign-only">Nur Signieren</button>
+    </div>
+
+    <h3>Antwort</h3>
+    <pre id="sign-output">Noch keine Aktion.</pre>
+  </section>
+
+  <script type="module" src="./js/spa-nostr-app.js"></script>
+</body>
+</html>

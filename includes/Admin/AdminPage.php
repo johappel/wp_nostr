@@ -42,6 +42,30 @@ class AdminPage
             true
         );
 
+        // Try to enqueue the bundled SPA if present (built by Vite -> assets/js/spa-nostr-app.bundle.js)
+        $bundle_path = 'assets/js/spa-nostr-app.bundle.js';
+        $bundle_file = NOSTR_SIGNER_PLUGIN_DIR . $bundle_path;
+        if ( file_exists( $bundle_file ) ) {
+            wp_enqueue_script(
+                'nostr-signer-spa',
+                NOSTR_SIGNER_PLUGIN_URL . $bundle_path,
+                [],
+                NOSTR_SIGNER_PLUGIN_VERSION,
+                true
+            );
+            $spa_handle = 'nostr-signer-spa';
+        } else {
+            // fallback to unbundled module for development
+            wp_enqueue_script(
+                'nostr-signer-spa',
+                NOSTR_SIGNER_PLUGIN_URL . 'assets/js/spa-nostr-app.js',
+                [],
+                NOSTR_SIGNER_PLUGIN_VERSION,
+                true
+            );
+            $spa_handle = 'nostr-signer-spa';
+        }
+
         wp_enqueue_script( 'nostr-tools' );
         wp_enqueue_script( 'nostr-signer-import' );
 
@@ -56,7 +80,19 @@ class AdminPage
             ]
         );
 
-        $temp_key_hex = hash_hmac( 'sha256', wp_get_session_token(), NOSTR_SIGNER_MASTER_KEY );
+        // Inject global config for SPA bundle as well
+        wp_localize_script(
+            $spa_handle,
+            'NostrSignerConfig',
+            [
+                'apiBase' => rest_url(),
+                'nonce'   => wp_create_nonce( 'wp_rest' ),
+                'meUrl'   => rest_url( 'nostr-signer/v1/me' ),
+                'signUrl' => rest_url( 'nostr-signer/v1/sign-event' ),
+            ]
+        );
+
+    $temp_key_hex = hash_hmac( 'sha256', wp_get_session_token(), \NOSTR_SIGNER_MASTER_KEY );
 
         wp_localize_script(
             'nostr-signer-import',
