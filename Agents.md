@@ -94,10 +94,10 @@ Erstelle eine PHP-Klasse oder Helper-Datei für die folgenden kryptografischen O
 
 #### 3.6. Sicherer Import von bestehenden `nsec`
 
-Implementieren Sie eine Funktion zum sicheren Importieren eines vorhandenen `nsec` auf einer Admin User-Profilseite oder einer dedizierten Plugin-Seite.
+Implementieren Sie eine Funktion zum sicheren Importieren eines vorhandenen `nsec` auf einer Admin Nostr-Profilseite (Admin Page unterhalb von Users) oder einer dedizierten Plugin-Seite.
 
 1.  **Server-Side (PHP):**
-    *   Erstellen Sie eine Admin-Seite (für blog) und erweitern Sie die Benutzerprofilseite um ein Formular mit einem Eingabefeld für den `nsec`. Im Benutzerprofil sollte mein npub angezeigt sein.
+    *   Erstellen Sie eine Admin-Seite (für blog) und erweitern Sie die Benutzerprofilseite um ein Formular mit einem Eingabefeld für den `nsec`. Im Nostr-Benutzerprofil sollte mein npub angezeigt sein.
     
     *   Wenn diese Seite geladen wird, generieren Sie einen temporären, sitzungsbasierten Verschlüsselungsschlüssel mit `hash_hmac('sha256', wp_get_session_token(), NOSTR_SIGNER_MASTER_KEY)`.
     *   Übergeben Sie diesen temporären Schlüssel via `wp_localize_script` an das Frontend-JavaScript. **Senden Sie niemals den `NOSTR_SIGNER_MASTER_KEY`!**
@@ -139,34 +139,6 @@ Funktion zum Veröffentlichen von kind: 0 (Profil-Metadaten):
   - Beispiel: ['r', get_author_posts_url(get_current_user_id())]
 
 
-
-Ja, absolut. Ihre Frage trifft den Nagel auf den Kopf. Die Verlinkung der Autorenseite im `kind: 0` Event ist der erste Schritt. **NIP-05 ist der zweite, entscheidende Schritt zur Verifizierung.** Es ist quasi das "blaue Häkchen" von Nostr.
-
-Lassen Sie uns das auseinandernehmen:
-
-*   **`kind: 0` (Metadaten):** Hier *behauptet* ein `npub`, dass ihm eine bestimmte Webseite gehört (`"website": "..."`). Jeder kann das in sein Profil schreiben.
-*   **NIP-05 (Verifizierung):** Hier *beweist* eine Webseite (also Ihr WordPress-Blog), dass ihr ein bestimmter `npub` gehört.
-
-Beide zusammen schaffen eine starke, vertrauenswürdige Verbindung. Ein Nostr-Client wie Damus oder Amethyst wird, wenn beides korrekt eingerichtet ist, einen grünen Haken oder ein ähnliches Verifizierungszeichen neben dem Benutzernamen anzeigen.
-
-### Wie NIP-05 funktioniert
-
-Ein Nostr-Client, der eine NIP-05-Adresse wie `joachim-happel@test1.rpi-virtuell.de` sieht, macht im Hintergrund Folgendes:
-
-1.  Er nimmt den Domain-Teil (`test1.rpi-virtuell.de`).
-2.  Er stellt eine standardisierte HTTPS-Anfrage an: `https://test1.rpi-virtuell.de/.well-known/nostr.json?name=joachim-happel`
-3.  Er erwartet von Ihrem Server eine JSON-Antwort, die so aussieht:
-
-```json
-{
-  "names": {
-    "joachim-happel": "hier_steht_der_HEX_public_key_von_joachim"
-  },
-  "relays": {
-    "hier_steht_der_HEX_public_key_von_joachim": [ "wss://relay.damus.io", "wss://relay.nostr.info" ]
-  }
-}
-
 #### 3.8. Implementierung der NIP-05 Verifizierung
 
 Erstellen Sie eine dynamische `/.well-known/nostr.json`-Schnittstelle, um die WordPress-Benutzer mit ihrer Nostr-Identität zu verifizieren.
@@ -189,7 +161,7 @@ Erstellen Sie eine dynamische `/.well-known/nostr.json`-Schnittstelle, um die Wo
         8.  Gib das Array als JSON-String mit `wp_json_encode()` aus.
         9.  Beende die Skriptausführung mit `exit;`.
 
-3.  **Benutzer-Feedback im Profil:**
+3.  **Benutzer-Feedback im Nostr Profil:**
     *   Zeige im WordPress-Profilbereich jedes Benutzers seine persönliche NIP-05-Adresse an (z.B. `ihr-slug@ihre-domain.de`), damit er weiß, was er in seinen Nostr-Client eintragen muss.
 
 ### 4. Zusammenfassung der Sicherheitsanforderungen

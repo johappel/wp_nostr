@@ -25,6 +25,7 @@ class WellKnownEndpoint
     public function register_query_vars( array $vars ): array
     {
         $vars[] = 'is_nostr_json';
+        $vars[] = 'name';
         return $vars;
     }
 
@@ -34,7 +35,14 @@ class WellKnownEndpoint
             return;
         }
 
-        $name = isset( $_GET['name'] ) ? sanitize_title( wp_unslash( (string) $_GET['name'] ) ) : '';
+        $name = '';
+        if ( isset( $_GET['name'] ) ) {
+            $name = sanitize_title( wp_unslash( (string) $_GET['name'] ) );
+        }
+
+        if ( $name === '' ) {
+            $name = sanitize_title( (string) get_query_var( 'name' ) );
+        }
 
         if ( $name === '' ) {
             $this->send_response( [], 400 );
@@ -55,12 +63,10 @@ class WellKnownEndpoint
             $this->send_response( [], 500 );
         }
 
-        $names = [
-            $name => $hex,
-        ];
-
         $payload = [
-            'names' => $names,
+            'names' => [
+                $name => $hex,
+            ],
         ];
 
         if ( ! empty( $this->relays ) ) {
@@ -80,8 +86,8 @@ class WellKnownEndpoint
             header( 'Access-Control-Allow-Origin: *' );
         }
 
-        echo wp_json_encode( $data ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped
+        $json = empty( $data ) ? '{}' : wp_json_encode( $data );
+        echo $json; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped
         exit;
     }
 }
-

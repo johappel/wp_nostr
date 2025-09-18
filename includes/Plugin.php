@@ -13,9 +13,10 @@ use NostrSigner\Rest\SignEventController;
 class Plugin
 {
     private const DEFAULT_RELAYS = [
-        'wss://relay.damus.io',
-        'wss://relay.nostr.band',
-        'wss://nostr.fmt.wiz.biz',
+        'wss://relay-rpi.edufeed.org',
+        // 'wss://relay.damus.io',
+        // 'wss://relay.nostr.band',
+        // 'wss://nostr.fmt.wiz.biz',
     ];
 
     private static ?Plugin $instance = null;
@@ -89,7 +90,7 @@ class Plugin
             wp_register_script(
                 'nostr-signer-import',
                 NOSTR_SIGNER_PLUGIN_URL . 'assets/js/nostr-signer-import.js',
-                [ 'nostr-tools' ],
+                [ 'wp-api-fetch', 'nostr-tools' ],
                 NOSTR_SIGNER_PLUGIN_VERSION,
                 true
             );
@@ -99,7 +100,7 @@ class Plugin
             wp_register_script(
                 'nostr-signer-profile',
                 NOSTR_SIGNER_PLUGIN_URL . 'assets/js/nostr-signer-profile.js',
-                [ 'nostr-tools' ],
+                [ 'wp-api-fetch', 'nostr-tools' ],
                 NOSTR_SIGNER_PLUGIN_VERSION,
                 true
             );
@@ -171,3 +172,5 @@ class Plugin
         $this->key_manager->create_keys_for_user( $user_id );
     }
 }
+
+
