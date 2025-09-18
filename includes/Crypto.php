@@ -8,6 +8,14 @@ class Crypto {
     private const CIPHER = 'aes-256-cbc';
     private const IV_LENGTH = 16;
 
+    private static function ensure_key_length( string $key ): string {
+        if ( strlen( $key ) !== 32 ) {
+            throw new RuntimeException( 'Invalid encryption key length.' );
+        }
+
+        return $key;
+    }
+
     public static function is_master_key_available(): bool {
         return defined( 'NOSTR_SIGNER_MASTER_KEY' ) && is_string( NOSTR_SIGNER_MASTER_KEY ) && NOSTR_SIGNER_MASTER_KEY !== '';
     }
@@ -20,8 +28,8 @@ class Crypto {
         return hash( 'sha256', NOSTR_SIGNER_MASTER_KEY, true );
     }
 
-    public static function encrypt( string $plaintext ): string {
-        $key = self::get_encryption_key();
+    private static function encrypt_with_binary_key( string $plaintext, string $key ): string {
+        $key = self::ensure_key_length( $key );
         $iv  = openssl_random_pseudo_bytes( self::IV_LENGTH );
 
         if ( $iv === false || strlen( $iv ) !== self::IV_LENGTH ) {
@@ -37,8 +45,8 @@ class Crypto {
         return base64_encode( $iv . $ciphertext );
     }
 
-    public static function decrypt( string $ciphertext ) {
-        $key = self::get_encryption_key();
+    private static function decrypt_with_binary_key_internal( string $ciphertext, string $key ) {
+        $key = self::ensure_key_length( $key );
         $data = base64_decode( $ciphertext, true );
 
         if ( $data === false ) {
@@ -49,10 +57,28 @@ class Crypto {
             return false;
         }
 
-        $iv         = substr( $data, 0, self::IV_LENGTH );
-        $encrypted  = substr( $data, self::IV_LENGTH );
-        $plaintext  = openssl_decrypt( $encrypted, self::CIPHER, $key, OPENSSL_RAW_DATA, $iv );
+        $iv        = substr( $data, 0, self::IV_LENGTH );
+        $encrypted = substr( $data, self::IV_LENGTH );
+        $plaintext = openssl_decrypt( $encrypted, self::CIPHER, $key, OPENSSL_RAW_DATA, $iv );
 
         return $plaintext !== false ? $plaintext : false;
+    }
+
+    public static function encrypt( string $plaintext ): string {
+        $key = self::get_encryption_key();
+        return self::encrypt_with_binary_key( $plaintext, $key );
+    }
+
+    public static function decrypt( string $ciphertext ) {
+        $key = self::get_encryption_key();
+        return self::decrypt_with_binary_key_internal( $ciphertext, $key );
+    }
+
+    public static function encrypt_with_custom_key( string $plaintext, string $key_binary ): string {
+        return self::encrypt_with_binary_key( $plaintext, $key_binary );
+    }
+
+    public static function decrypt_with_custom_key( string $ciphertext, string $key_binary ) {
+        return self::decrypt_with_binary_key_internal( $ciphertext, $key_binary );
     }
 }

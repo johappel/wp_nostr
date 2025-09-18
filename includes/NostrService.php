@@ -93,4 +93,20 @@ class NostrService
             return null;
         }
     }
+
+    public function deriveNpubFromNsec( string $nsec ): ?string
+    {
+        if ( ! $this->is_library_available() ) {
+            return null;
+        }
+
+        try {
+            $converter   = new Key();
+            $private_hex = $converter->convertToHex( $nsec );
+            $public_hex  = $converter->getPublicKey( $private_hex );
+            return $converter->convertPublicKeyToBech32( $public_hex );
+        } catch ( \Throwable ) {
+            return null;
+        }
+    }
 }

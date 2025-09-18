@@ -65,7 +65,7 @@ class Plugin
         if ( ! wp_script_is( 'nostr-tools', 'registered' ) ) {
             wp_register_script(
                 'nostr-tools',
-                'https://cdn.jsdelivr.net/npm/nostr-tools@2.16.2/lib/nostr.bundle.min.js',
+                'https://unpkg.com/nostr-tools@2.3.1/lib/nostr-tools.min.js',
                 [],
                 '2.3.1',
                 true
