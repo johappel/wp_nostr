@@ -73,3 +73,4 @@ Dieses Repository enthält kein fertiges Tool zum Rotieren des Master-Keys. Das 
 
 Hinweis zur Sicherheit: Halte sowohl alte als auch neue Master-Key-Werte nur temporär im Speicher und lösche sie unmittelbar nach Verwendung.
 
+Erste ideen dazu in  WP-CLI.md, wo einige wp cli commands bereit stehen, die dieses Konzeot unterstützen können.
