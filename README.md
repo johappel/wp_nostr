@@ -353,22 +353,7 @@ Wichtig: Behandle die Schlüssel (alte und neue) vertraulich. Setze den neuen Ma
 - Rate-Limiting: Füge serverseitiges Rate-Limiting pro Benutzer/IP hinzu, um Missbrauch zu begrenzen (z. B. transient-basierte Zähler oder Integration mit einem Reverse-Proxy / WAF).
 - Input-Validierung: Validere `event`-Felder (z. B. `kind` als Integer, `tags` als Array von Arrays), um fehlerhafte Requests und mögliche Ausnutzungen der Nostr-Library zu verhindern.
 - Schlüsselrotation & Backup: Dokumentiere Prozesse für Schlüssel-Rotation und sichere Backups der `wp_options`/`user_meta`-Werte (nur verschlüsselte `nsec` speichern). Plane einen Ablauf für den Fall, dass `NOSTR_SIGNER_MASTER_KEY` kompromittiert wird.
-- Import-Flow: Der temporäre Schlüssel für den Import wird aus der Session abgeleitet und ist nur kurz gültig. Stelle sicher, dass Clients und Admins verstehen, dass der temporäre Schlüssel kein Ersatz für den Master-Key ist und NIE an Clients weitergegeben wird.
-
-## Ankündigungstext für das Plugin
-
-Neu: Nostr Signer — sichere Server-seitige Signaturen für Nostr in WordPress
-
-Mit dem Nostr Signer Plugin kannst du jetzt Nostr-Events direkt aus deinem WordPress-Blog heraus signieren, ohne Private Keys im Browser zu speichern. Das Plugin verwaltet pro-Benutzer Schlüsselpaare sowie ein optionales globales Blog-Schlüsselpaar, verschlüsselt private Schlüssel sicher in der Datenbank und stellt REST-API-Endpunkte bereit, über die eingeloggte Benutzer Events signieren und (optional) an Relays senden können.
-
-Kurz: sichere Signaturen, volle Kontrolle über Benutzerzugriff via WordPress-Accounts, und einfache Integration für Web-Apps oder Frontend-SPAs.
-
-Features im Überblick:
-- Server-seitiges Signieren von Nostr-Events (user- oder blog-Keys)
-- Verschlüsselte Speicherung von `nsec` mit einem Master-Key in `wp-config.php`
-- REST-API (`/nostr-signer/v1/sign-event`, `/me`, `/import-key`) mit Nonce- und Session-Protection
-- Optionales Broadcast an konfigurierte Relays
-- Demo-Frontend und SPA-Beispiele zur einfachen Integration
+- Import-Flow: Der temporäre Schlüssel für den Import wird aus der Session abgeleitet und ist nur kurz gültig. 
 
 TODO:
 - Rate-Limits

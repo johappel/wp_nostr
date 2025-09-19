@@ -33,6 +33,11 @@ class Commands
     public function backup( $args, $assoc )
     {
         [$file] = $args;
+        if ( ! $file  ) {
+            $date_str = date( 'Ymd_His' );
+            $file = "nostr_signer_backup_{$date_str}.json";
+            WP_CLI::error( "File path is required. e.g. wp nostrsigner backup $file" );
+        }
 
         $data = [
             'generated_at' => time(),

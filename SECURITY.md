@@ -73,17 +73,3 @@ Dieses Repository enthält kein fertiges Tool zum Rotieren des Master-Keys. Das 
 
 Hinweis zur Sicherheit: Halte sowohl alte als auch neue Master-Key-Werte nur temporär im Speicher und lösche sie unmittelbar nach Verwendung.
 
-## Empfehlung: Secrets-Management
-
-- Verwende einen Secret-Manager (z. B. HashiCorp Vault, AWS Secrets Manager, Azure Key Vault) statt harte Kodierung in Deployments.
-- Rotationsprozesse sollten über das Secrets-Management orchestriert werden (z. B. Rotation-Trigger, Rollback-Pläne).
-
-## Weitere Hardening-Maßnahmen (kurz)
-
-- Rate-Limit REST-Endpoints (transient- oder redis-basiert).
-- Begrenze die Zugriffsrechte für Import/Blog-Key-Operationen auf Admin-Rollen.
-- Implementiere Audit-Logs für Signatur- und Import-Aktionen.
-- Schütze Backup-Zugriff mit MFA und Netzwerkzugriffsregeln.
-
----
-Wenn du willst, kann ich ein konkretes PHP-CLI-Migrationsskript erstellen, das die Schlüsselrotation durchführt, plus ein optionales Admin-UI, um Rotation oder Re-Import-Prozesse zu steuern.
