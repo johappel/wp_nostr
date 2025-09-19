@@ -16,27 +16,33 @@
 
 #### 3.1. Plugin-Grundgerüst & Konfiguration
 
-1.  **Plugin-Datei:** Erstelle eine Haupt-Plugin-Datei `nostr-signer.php` mit dem Standard-WordPress-Plugin-Header.
-2.  **Abhängigkeiten:** Integriere eine PHP-Bibliothek für Nostr-Funktionen (z. B. `fedimint/nostr-php`) mittels Composer. Stelle sicher, dass der `vendor/autoload.php` korrekt eingebunden wird.
-3.  **Master-Schlüssel-Handling:**
-    *   Das Plugin muss eine Konstante namens `NOSTR_SIGNER_MASTER_KEY` in der `wp-config.php` voraussetzen.
-    *   Implementiere eine `admin_notices`-Prüfung, die eine permanente Warnung anzeigt, falls `!defined('NOSTR_SIGNER_MASTER_KEY')`. Die Warnung soll den Admin anleiten, die Konstante mit einem sicheren, zufälligen Wert zu definieren.
-    *   Die Kernfunktionalität des Plugins (insb. Ver- und Entschlüsselung) muss deaktiviert sein, solange die Konstante nicht gesetzt ist.
+* Das Plugin muss **eine aktive Schlüsselversion** (`NOSTR_SIGNER_ACTIVE_KEY_VERSION`) und mindestens einen Key-Eintrag `NOSTR_SIGNER_KEY_Vx` (Base64-codiert, 32 Byte) in der `wp-config.php` voraussetzen.
+* Beispiel in `wp-config.php`:
+
+    ```php
+    define('NOSTR_SIGNER_ACTIVE_KEY_VERSION', 1);
+    define('NOSTR_SIGNER_KEY_V1', 'base64:…'); // 32 Byte
+    ```
+* Bei jedem Seitenaufruf prüft das Plugin, ob `NOSTR_SIGNER_ACTIVE_KEY_VERSION` gesetzt ist und ob ein Key mit dieser Versionsnummer existiert. Falls nicht, zeigt es eine dauerhafte Admin-Warnung und deaktiviert die Kernfunktionalität.
+* Das Plugin darf mehrere Keys parallel akzeptieren (z. B. für Entschlüsselung alter Daten). Neue Verschlüsselungen nutzen **immer** den aktiven Key.
+
 
 #### 3.2. Kryptografie-Modul
 
 Erstelle eine PHP-Klasse oder Helper-Datei für die folgenden kryptografischen Operationen:
 
 1.  **Verschlüsselungsfunktion `nostr_signer_encrypt(string $plaintext): string`:**
-    *   Nutzt `openssl_encrypt` mit dem Algorithmus `AES-256-CBC`.
-    *   Verwendet den `NOSTR_SIGNER_MASTER_KEY` als Schlüssel.
-    *   Generiert bei jedem Aufruf einen neuen, zufälligen Initialisierungsvektor (IV) der korrekten Länge.
-    *   Kombiniert den IV mit dem verschlüsselten Text und gibt das Ergebnis als `base64_encode()`-String zurück (z.B. `base64_encode($iv . $encrypted_text)`).
+    - Erzeugt pro Datensatz einen frischen Data-Encryption-Key (DEK) via random_bytes(32).
+    - Verschlüsselt die Daten mit AES-256-GCM (openssl_encrypt mit Tag).
+    - Wickelt den DEK mit dem aktiven Key-Encryption-Key (KEK, aus NOSTR_SIGNER_KEY_Vx) ein.
+    - Baut daraus ein JSON-Envelope mit kv (Key-Version), Ciphertext, IVs, Tags und Wrapped-Key.
+    - Gibt das Ergebnis Base64-kodiert zurück.
 2.  **Entschlüsselungsfunktion `nostr_signer_decrypt(string $ciphertext): string|false`:**
-    *   Nimmt den Base64-kodierten String entgegen.
-    *   Dekodiert den String, extrahiert den IV und den verschlüsselten Text.
-    *   Nutzt `openssl_decrypt` mit den extrahierten Daten und dem `NOSTR_SIGNER_MASTER_KEY`.
-    *   Gibt den entschlüsselten Klartext (`nsec`) oder `false` bei einem Fehler zurück.
+    - Erwartet den Base64-kodierten Envelope.
+    - Liest die enthaltene kv (Key-Version) aus und holt den passenden KEK.
+    - Wickelt den DEK aus.
+    - Entschlüsselt den Ciphertext mit dem DEK.
+    - Gibt den Klartext oder false zurück.
 
 #### 3.3. Schlüsselmanagement
 
@@ -109,6 +115,9 @@ Implementieren Sie eine Funktion zum sicheren Importieren eines vorhandenen `nse
         2.  Validieren Sie den `nsec` und leiten Sie den `npub` mit `nostr-tools` ab.
         3.  Verschlüsseln Sie den `nsec`-String mit dem vom Server erhaltenen temporären Schlüssel (AES-256-CBC).
         4.  Senden Sie den **verschlüsselten `nsec`** und den **Klartext-`npub`** an einen neuen REST-API-Endpunkt.
+        5.  Auch beim Import wird der Klartext-nsec nach dem Entschlüsseln mit dem aktiven KEK im Envelope-Format gespeichert.
+        6.  Das temporäre Sitzungs-Schlüsselschema für den Client bleibt gleich, lediglich die endgültige Speicherung verwendet nostr_signer_encrypt() (Envelope-Methode).
+
 
 3.  **Neuer REST-API-Endpunkt (PHP):**
     *   **Route:** `/import-key`
@@ -166,7 +175,18 @@ Erstellen Sie eine dynamische `/.well-known/nostr.json`-Schnittstelle, um die Wo
 
 ### 4. Zusammenfassung der Sicherheitsanforderungen
 
-*   **Master-Schlüssel:** Darf NUR in `wp-config.php` stehen.
-*   **Datenfluss:** Der private Schlüssel (`nsec`) darf niemals, weder verschlüsselt noch unverschlüsselt, an den Client (Browser) gesendet werden.
-*   **Memory Management:** Die Lebensdauer des entschlüsselten `nsec` im serverseitigen Arbeitsspeicher muss auf das absolute Minimum beschränkt sein.
+* **Key-Management**: In wp-config.php dürfen mehrere KEKs hinterlegt sein (NOSTR_SIGNER_KEY_V1, NOSTR_SIGNER_KEY_V2, …).
+* **Aktiver Key**: Neue Verschlüsselungen nutzen immer den durch NOSTR_SIGNER_ACTIVE_KEY_VERSION gesetzten KEK.
+
+* **Rotation**: Alte Daten können weiter entschlüsselt werden, solange die zugehörige Key-Version
+
+* **Schlüssel-Policy & Rotation (automatisiert)**:
+  - NOSTR_SIGNER_ACTIVE_KEY_VERSION bestimmt den Schreib-Key.
+  - NOSTR_SIGNER_MAX_KEY_VERSIONS gibt an, wie viele KEK-Versionen parallel akzeptiert werden (z. B. 2).
+  - Der Plugin-Cronjob „Re-Wrap“ prüft regelmäßig alle gespeicherten Envelopes (kv) und wickelt alles, was nicht zur Menge {active … active-(MAX-1)} gehört, verlustfrei auf den aktiven Key neu (nur wk+kv werden geändert, ct bleibt gleich).
+  - Sobald keine Envelopes mehr eine ältere kv tragen, gibt das Plugin eine Admin-Notice „Alt-Key X kann sicher entfernt werden“ aus.
+  - Optional: per WP-CLI vollständige/forcierte Rotation.
+
+*   **Datenfluss:** Der private Schlüssel (`nsec`) darf niemals, weder verschlüsselt noch unverschlüsselt, an den Client (Browser) gesendet werden. 
+*   **Memory Management:** Die Lebensdauer des entschlüsselten `nsec` im serverseitigen Arbeitsspeicher muss auf das absolute Minimum beschränkt sein. Klartext-nsec: Darf wie bisher niemals den Server verlassen und muss sofort nach Gebrauch unset() werden.
 *   **Zugriffsschutz:** Der API-Endpunkt muss gegen unbefugten Zugriff und CSRF-Angriffe geschützt sein.
