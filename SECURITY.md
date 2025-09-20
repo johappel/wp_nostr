@@ -1,76 +1,58 @@
-# Security Guide — Nostr Signer
+﻿# Security Guide – Nostr Signer
 
-Diese Datei fasst sicherheitsrelevante Empfehlungen, Backup- und Rotationsverfahren für das `NOSTR_SIGNER_MASTER_KEY` und die verschlüsselten `nsec`-Werte zusammen.
+Diese Datei fasst sicherheitsrelevante Empfehlungen, Backup- und Rotationsverfahren für den Master-Schlüssel (`NOSTR_SIGNER_MASTER_KEY`), die Key-Encryption-Keys (`NOSTR_SIGNER_KEY_Vx`) sowie die verschlüsselten `nsec`-Envelopes zusammen.
 
 ## Grundprinzipien
 
-- Der Master-Key (`NOSTR_SIGNER_MASTER_KEY`) darf NUR in `wp-config.php` stehen und niemals in Versionskontrolle (Git) oder in Log-Dateien erscheinen.
-- Private Schlüssel (`nsec`) werden in der Datenbank nur verschlüsselt gespeichert. Die DB-Sicherung darf die verschlüsselten Werte enthalten, niemals Klartext-`nsec`.
-- Bei jeder Operation, die einen entschlüsselten `nsec` benötigt, muss der Klartext nur kurz im RAM existieren und unmittelbar nach Nutzung gelöscht werden.
+- Der Master-Key (`NOSTR_SIGNER_MASTER_KEY`) liegt ausschließlich in `wp-config.php` und dient für temporäre Import-Schlüssel sowie als Fallback zur Entschlüsselung alter Datensätze.
+- Key-Encryption-Keys (`NOSTR_SIGNER_KEY_Vx`) verschlüsseln die eigentlichen Nostr-Secrets. Für jeden aktiven Wert existiert eine Version (`kv`) im Envelope.
+- `nsec`-Werte befinden sich in der Datenbank nur verschlüsselt; Klartext verlässt den Server nie und wird nach der Nutzung mit `unset()` entfernt.
+- Authentifizierung + Nonce-Schutz sind Pflicht für alle Signier- und Import-Endpunkte.
 
 ## Backup der verschlüsselten `nsec`-Werte
 
-1. Regelmäßige Backups der WordPress-Datenbank inkl. `user_meta` und `wp_options` durchführen.
-2. Sicherstellen, dass Backups verschlüsselt abgelegt und nur autorisierten Admins zugänglich sind.
-3. Wichtiger Hinweis: Backups enthalten die `nsec`-Werte nur in verschlüsselter Form. Ohne den korrekten `NOSTR_SIGNER_MASTER_KEY` sind die `nsec`-Werte nicht nutzbar.
+1. Regelmäßig Datenbank-Backups (inkl. `user_meta`, `wp_options`) anfertigen.
+2. Backups verschlüsselt speichern und nur befugten Personen zugänglich machen.
+3. Ohne gültige KEKs (und ggf. Master-Key für Legacy-Werte) lassen sich die gespeicherten Envelopes nicht entschlüsseln – sichere Aufbewahrung aller Schlüssel ist daher essenziell.
 
-Empfohlener Backup-Workflow:
+Empfehlungen:
+- Tägliche Voll-Backups, differenzielle Backups nach Bedarf.
+- Wiederherstellungen periodisch testen: Restore in isolierter Umgebung, Signatur-Endpunkt mit Testdaten prüfen.
+- Backups immer gemeinsam mit einem Schlüssel-Inventar (Versionen, Aktiv-Status) dokumentieren.
 
-- Vollständige DB-Backups mindestens täglich; differenzielle Backups nach Bedarf.
-- Verwende verschlüsselte Backup-Speicher (z. B. verschlüsselte S3-Buckets oder verschlüsselte Filesystem-Volumes).
-- Teste Wiederherstellungen periodisch in einer sicheren Testumgebung (restore + Versuch, mit aktuellem Master-Key zu entschlüsseln).
+## Kompromittierung eines KEK oder des Master-Schlüssels – Notfallplan
 
-## Kompromittierung des `NOSTR_SIGNER_MASTER_KEY` — Notfallplan
+### Aktiver KEK kompromittiert
+1. In `wp-config.php` einen neuen Eintrag `NOSTR_SIGNER_KEY_V{n}` hinzufügen und `NOSTR_SIGNER_ACTIVE_KEY_VERSION` auf die neue Nummer setzen (ggf. `NOSTR_SIGNER_MAX_KEY_VERSIONS` anpassen).
+2. Cron-/CLI-Rewrap starten (`nostr_signer_rotate_event` oder `wp nostrsigner rotate`), damit alle Envelopes mit alten `kv`-Werten auf den neuen KEK umgewickelt werden.
+3. Monitoring: Admin-Notice bzw. CLI-Ausgabe prüfen. Sobald keine Envelopes mehr auf den kompromittierten `kv` verweisen, den alten `NOSTR_SIGNER_KEY_Vx` aus allen Systemen entfernen.
+4. Vorfall dokumentieren und betroffene Systeme/Benutzer informieren.
 
-Wenn du annimmst, dass der Master-Key kompromittiert wurde, folge diesen Schritten:
+### Master-Key kompromittiert
+1. `NOSTR_SIGNER_MASTER_KEY` in `wp-config.php` durch einen neuen Zufallswert ersetzen.
+2. Legacy-Daten (altes CBC-Format) über `wp nostrsigner recrypt` oder den automatischen Rewrap migrieren; neue Envelopes nutzen automatisch den aktiven KEK.
+3. Temporäre HMAC-Schlüssel für den Import verlieren nach der nächsten Session ihre Gültigkeit – optional alle Sessions abmelden.
+4. Kompromittierten Master-Key aus allen Secret-Stores löschen.
 
-1. Sofort den kompromittierten Master-Key in `wp-config.php` überschreiben (ersetzen) durch einen neuen, starken zufälligen Wert.
-2. Erzeuge ein neues Master-Key-Paar: wähle `NEW_MASTER_KEY` und setze `NOSTR_SIGNER_MASTER_KEY = NEW_MASTER_KEY` in `wp-config.php`.
-3. Nun müssen alle gespeicherten `nsec`-Werte neu verschlüsselt werden. Ablauf:
-   - Entschlüssele jede gespeicherte `nsec` mit dem alten Master-Key (dies setzt voraus, dass du noch Zugriff auf den alten Key hast) — wenn der alte Key nicht mehr verfügbar ist, informiere Benutzer, dass ein Re-Import der privaten Schlüssel nötig ist.
-   - Verschlüssele jedes `nsec` mit dem neuen `NOSTR_SIGNER_MASTER_KEY` und speichere die neuen verschlüsselten Werte in `user_meta`/`wp_options`.
-   - Lösche temporäre Klartext-Variablen sofort nach Nutzung.
-4. Informiere betroffene Benutzer über die Maßnahme und die nötigen Schritte (z. B. erneuter Login, optionaler Re-Import von `nsec` falls alte `nsec` nicht mehr verfügbar sind).
-5. Rotations- und Forensik-Plan: Führe ein Audit-Log der betroffenen Aktionen und analysiere, wie der Schlüssel kompromittiert wurde.
+> Hinweis: Ohne Zugriff auf den ursprünglichen KEK/Master-Key sind vorhandene Envelopes nicht wiederherstellbar. Benutzer müssen ihre privaten Schlüssel neu importieren.
 
-Hinweis: Wenn der alte Master-Key verloren oder dauerhaft unbrauchbar ist, ist eine re-verschlüsselung nicht möglich; in diesem Fall müssen Benutzer ihre privaten `nsec`-Schlüssel neu importieren.
+## Regelmäßige Rotation der KEKs
 
-## Regelmäßige Rotation des `NOSTR_SIGNER_MASTER_KEY`
+1. Neuen KEK definieren (`NOSTR_SIGNER_KEY_V{n}`) und `NOSTR_SIGNER_ACTIVE_KEY_VERSION` erhöhen.
+2. Cron-Job oder WP-CLI (`wp nostrsigner rotate`, `wp nostrsigner rewrap --limit=...`) ausführen, bis alle Envelopes auf zulässige Versionen (`NOSTR_SIGNER_MAX_KEY_VERSIONS`) gebracht wurden.
+3. Admin-Notice „Alt-Key kann entfernt werden“ beachten oder CLI-Report prüfen.
+4. Nicht mehr benötigte KEKs aus `wp-config.php` und externen Secrets entfernen.
 
-Ja, der Master-Key kann regelmäßig rotiert werden — das erfordert aber ein definiertes Verfahren:
+Während der Rotation bleiben ältere Versionen lesbar, solange sie innerhalb des definierten Versionsfensters liegen.
 
-Anforderungen für Rotation:
+## Minimaler CLI-/Automatisierungs-Workflow
 
-- Temporärer Zugriff auf den aktuellen (alten) Master-Key, um bestehende `nsec` zu entschlüsseln.
-- Ein sicheres Verfahren, um den neuen Master-Key in `wp-config.php` zu setzen (z. B. durch CI/CD Secrets Management oder manuelles Setzen auf dem Host).
-- Ein Skript oder Routine, die alle `nsec`-Einträge entschlüsselt und mit dem neuen Master-Key wieder verschlüsselt.
+Für individuelle Migrationsszenarien (z. B. außerplanmäßige Rotation oder Recovery) empfiehlt sich folgendes Muster:
 
-Vorgeschlagener Rotationsablauf:
+1. Vollständiges Datenbank-Backup erstellen.
+2. Alte und neue Schlüssel als Umgebungsvariablen nur für die Laufzeit des Prozesses verfügbar machen.
+3. Über WP-CLI (`wp nostrsigner rotate`, `wp nostrsigner rewrap`, `wp nostrsigner recrypt`) oder ein eigenes PHP-Skript alle betroffenen Envelopes batchweise verarbeiten.
+4. Nach Abschluss Stichproben testen (Signatur-Endpunkt, Key-Import) und Erfolg protokollieren.
+5. Schlüsselmaterial und temporäre Dateien sofort vernichten.
 
-1. Generiere einen neuen starken Master-Key (`NEW_MASTER_KEY`).
-2. Setze `NOSTR_SIGNER_MASTER_KEY = NEW_MASTER_KEY` in `wp-config.php` (z. B. durch Deployment-Tooling).
-3. Führe ein Migrationsskript aus, das für jede `user_meta`/`wp_options`-Spalte mit einem verschlüsselten `nsec`:
-   - entschlüsselt mit dem alten Master-Key,
-   - verschlüsselt mit dem neuen Master-Key,
-   - schreibt das Ergebnis zurück.
-4. Validierung: Teste stichprobenartig, dass einige Benutzer sich weiterhin signieren lassen können (Signatur-Endpoint aufrufen und Ergebnis prüfen).
-5. Alte Schlüssel sicher vernichten (z. B. aus CI/CD Secrets, temporären Dateien oder Logs entfernen).
-
-Automatisierung: Für produktive Umgebungen empfiehlt sich ein Skript (CLI/PHP) mit folgenden Eigenschaften:
-
-- Backup aller aktuellen verschlüsselten Werte vor der Rotation.
-- Transaktionsartige Migration (z. B. Batch-Verarbeitung, atomare Updates per DB-Transactions wo möglich).
-- Fehler-Handling: Bei Migrationsfehlern sollte das Skript die Situation protokollieren und den Prozess abbrechen, damit kein inkonsistenter Zustand entsteht.
-
-## Minimaler CLI-Migrations-Skript (Konzept)
-
-Dieses Repository enthält kein fertiges Tool zum Rotieren des Master-Keys. Das folgende Konzept gibt jedoch die nötigen Schritte wieder:
-
-1. Backup der DB.
-2. Setze Umgebung so, dass der alte Master-Key und der neue Master-Key verfügbar sind (z. B. in Umgebungsvariablen für das Skript, aber NICHT dauerhaft in Versionierung).
-3. Skript iteriert über alle Benutzer, entschlüsselt `nostr_encrypted_nsec` mit `OLD_MASTER_KEY`, verschlüsselt mit `NEW_MASTER_KEY`, speichert zurück.
-4. Validierungsphase und Abschluss-Report.
-
-Hinweis zur Sicherheit: Halte sowohl alte als auch neue Master-Key-Werte nur temporär im Speicher und lösche sie unmittelbar nach Verwendung.
-
-Erste ideen dazu in  WP-CLI.md, wo einige wp cli commands bereit stehen, die dieses Konzeot unterstützen können.
+Weiterführende Details zu den WP-CLI-Kommandos stehen in `WP-CLI.md`.

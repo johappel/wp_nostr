@@ -38,6 +38,31 @@ class Crypto {
         }
     }
 
+    public static function get_configuration_issues(): array {
+        $issues = [];
+
+        if ( ! defined( 'NOSTR_SIGNER_MASTER_KEY' ) || ! is_string( NOSTR_SIGNER_MASTER_KEY ) || NOSTR_SIGNER_MASTER_KEY === '' ) {
+            $issues[] = 'Der Master-Schluessel NOSTR_SIGNER_MASTER_KEY ist nicht gesetzt oder ungueltig.';
+            return $issues;
+        }
+
+        try {
+            $active = self::get_active_key_version();
+        } catch ( RuntimeException $exception ) {
+            $issues[] = $exception->getMessage();
+            $active = null;
+        }
+
+        if ( $active !== null ) {
+            try {
+                self::get_kek_by_version( $active );
+            } catch ( RuntimeException $exception ) {
+                $issues[] = $exception->getMessage();
+            }
+        }
+
+        return array_values( array_unique( $issues ) );
+    }
     public static function encrypt( string $plaintext ): string {
         $version = self::get_active_key_version();
         $kek     = self::get_kek_by_version( $version );
@@ -260,7 +285,59 @@ class Crypto {
         return base64_encode( $json );
     }
 
-    private static function rewrap_envelope_with_custom_keys( string $ciphertext, string $old_kek, string $new_kek, int $new_version ): ?string {
+    public static function maybe_rewrap_to_active( string $ciphertext ): ?array {
+        $json = base64_decode( $ciphertext, true );
+        if ( $json === false ) {
+            return null;
+        }
+
+        try {
+            $envelope = json_decode( $json, true, 512, JSON_THROW_ON_ERROR );
+        } catch ( JsonException $exception ) {
+            return null;
+        }
+
+        if ( ! is_array( $envelope ) || ! isset( $envelope['kv'], $envelope['wi'], $envelope['wt'], $envelope['wk'] ) ) {
+            return null;
+        }
+
+        $current_version = (int) $envelope['kv'];
+        $active_version  = self::get_active_key_version();
+        $allowed         = self::get_allowed_key_versions();
+
+        if ( in_array( $current_version, $allowed, true ) ) {
+            return [
+                'ciphertext'       => $ciphertext,
+                'original_version' => $current_version,
+                'changed'          => false,
+            ];
+        }
+
+        try {
+            $old_kek = self::get_kek_by_version( $current_version );
+        } catch ( RuntimeException $exception ) {
+            return null;
+        }
+
+        try {
+            $new_kek = self::get_kek_by_version( $active_version );
+        } catch ( RuntimeException $exception ) {
+            return null;
+        }
+
+        $rewrapped = self::rewrap_envelope_with_custom_keys( $ciphertext, $old_kek, $new_kek, $active_version );
+        if ( $rewrapped === null ) {
+            return null;
+        }
+
+        return [
+            'ciphertext'       => $rewrapped,
+            'original_version' => $current_version,
+            'changed'          => true,
+        ];
+    }
+
+    public static function rewrap_envelope_with_custom_keys( string $ciphertext, string $old_kek, string $new_kek, int $new_version ): ?string {
         $json = base64_decode( $ciphertext, true );
         if ( $json === false ) {
             return null;
@@ -332,7 +409,7 @@ class Crypto {
         return base64_encode( $json_new );
     }
 
-    private static function get_active_key_version(): int {
+    public static function get_active_key_version(): int {
         $raw = defined( 'NOSTR_SIGNER_ACTIVE_KEY_VERSION' ) ? constant( 'NOSTR_SIGNER_ACTIVE_KEY_VERSION' ) : 1;
 
         if ( ! is_numeric( $raw ) ) {
@@ -345,6 +422,25 @@ class Crypto {
         }
 
         return $version;
+    }
+
+    public static function get_allowed_key_versions(): array {
+        $active = self::get_active_key_version();
+        $max = defined( 'NOSTR_SIGNER_MAX_KEY_VERSIONS' ) ? (int) constant( 'NOSTR_SIGNER_MAX_KEY_VERSIONS' ) : 1;
+        if ( $max < 1 ) {
+            $max = 1;
+        }
+        $lowest = $active - ( $max - 1 );
+        if ( $lowest < 1 ) {
+            $lowest = 1;
+        }
+
+        $versions = [];
+        for ( $version = $active; $version >= $lowest; $version-- ) {
+            $versions[] = $version;
+        }
+
+        return $versions;
     }
 
     private static function get_kek_by_version( int $version ): string {
@@ -481,3 +577,4 @@ class Crypto {
         return hash( 'sha256', $trimmed, true );
     }
 }
+

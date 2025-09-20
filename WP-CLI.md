@@ -1,8 +1,6 @@
-# WP-CLI — Nostr Signer Commands
+# WP-CLI - Nostr Signer Commands
 
-Kurze Übersicht der verfügbaren WP-CLI-Commands für das Nostr Signer Plugin.
-
-Wichtig: Diese Commands ändern kryptografische Daten. Führe sie nur auf vertrauenswürdigen Hosts aus, sichere vorher ein verschlüsseltes DB-Backup und vermeide, Schlüssel in Shell-History zu speichern.
+Kurzueberblick ueber die verfuegbaren WP-CLI-Kommandos des Plugins. Alle Befehle aendern kryptografische Daten - teste sie zuerst in Staging, sichere zuvor ein Datenbank-Backup und halte Geheimnisse nicht in der Shell-History.
 
 1) backup
 
@@ -11,7 +9,7 @@ Usage:
   wp nostrsigner backup <file>
 
 Beschreibung:
-  Exportiert alle verschlüsselten `nsec`-Werte (Blog + Benutzer) in die angegebene JSON-Datei (`<file>`).
+  Exportiert alle verschluesselten `nsec`-Werte (Blog + Benutzer) als JSON in `<file>`.
 
 Beispiel:
 
@@ -26,7 +24,7 @@ Usage:
   wp nostrsigner keygen
 
 Beschreibung:
-  Generiert einen empfohlenen neuen Master-Key (64 hex Zeichen) und gibt ihn auf der Konsole aus. Setze den Key manuell in `wp-config.php` bevor du `recrypt` ausführst.
+  Erzeugt einen neuen 32-Byte-Schluessel (hex). Verwende ihn als neuen `NOSTR_SIGNER_KEY_V{n}` fuer KEK-Rotation oder als Master-Key fuer Legacy-Daten.
 
 3) recrypt
 
@@ -35,23 +33,26 @@ Usage:
   wp nostrsigner recrypt <old_key> <new_key>
 
 Beschreibung:
-  Rekryptiert alle gespeicherten, verschlüsselten `nsec`-Werte von `old_key` auf `new_key`.
+  Rekryptiert alle gespeicherten `nsec`-Werte vom alten Master-Key auf einen neuen. Nur fuer Altsysteme ohne Envelope-Format noetig.
 
 Beispiel:
 
   wp nostrsigner recrypt a1b2...f3 a4b5...e6
 
-Warnung:
-  Beide Keys sind sensibel. Halte sie nicht lange in der Shell-History; verwende sichere Umgebungen oder Secrets-Manager.
-
 4) rotate
 
 Usage:
 
-  wp nostrsigner rotate --old=<old_key> --new=<new_key>
+  wp nostrsigner rotate [--limit=<anzahl>] [--reset]
 
 Beschreibung:
-  Wrapper, der `recrypt` mit den angegebenen Werten aufruft. Praktisch für automatisierte Abläufe.
+  Fuehrt den Re-Wrap-Durchlauf fuer das aktuelle Envelope-Schema aus. `--limit` steuert die Batch-Groesse (Standard 200). `--reset` setzt den Rotationsstatus zurueck und startet erneut bei Seite 1.
+
+Beispiel:
+
+  wp nostrsigner rotate --limit=500
+
+Die Ausgabe nennt, wie viele Envelopes in diesem Batch verarbeitet wurden. Wenn weitere Batches ausstehen, fuehre den Befehl erneut aus oder warte auf den Cronjob `nostr_signer_rotate_event`.
 
 5) restore
 
@@ -60,17 +61,16 @@ Usage:
   wp nostrsigner restore <file>
 
 Beschreibung:
-  Stellt ein Backup-JSON wieder her und schreibt `npub` / `encrypted_nsec` für Blog und Benutzer zurück.
+  Stellt ein Backup-JSON wieder her und schreibt `npub` / `encrypted_nsec` fuer Blog und Benutzer zurueck.
 
 Beispiel:
 
   wp nostrsigner restore /tmp/nostr-backup.json
 
-Sicherheits-Checklist vor Ausführung
+Sicherheits-Checkliste vor kritischen Befehlen
 
-- Always make a full encrypted DB backup before recrypt/restore.
-- Do not expose master keys in logs or shell history. Prefer secrets managers or temporary environment variables.
-- Test recrypt in a staging environment first (use a copy of DB + keys).
-- Inform affected users if you performed a key rotation or emergency re-encryption.
-
-If you want, I can add a `--dry-run` option and batch/transaction support for `recrypt` to reduce risk for large sites.
+- Immer ein vollstaendiges, verschluesseltes DB-Backup anlegen.
+- Geheimnisse nur kurzzeitig im Speicher halten, bevorzugt ueber Secrets-Manager einspielen.
+- Rotation zuerst in einer Staging-Umgebung testen und Stichproben pruefen.
+- Nutzer informieren, wenn eine Schluesselrotation oder ein Notfall-Rewrap erfolgt ist.
+- Nach Abschluss alte KEKs aus `wp-config.php` und externen Secret-Stores entfernen.

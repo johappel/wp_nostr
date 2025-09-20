@@ -4,6 +4,9 @@ namespace NostrSigner\CLI;
 
 use NostrSigner\Crypto;
 use NostrSigner\KeyManager;
+use NostrSigner\Plugin;
+use NostrSigner\RotationManager;
+use NostrSigner\NostrService;
 use WP_CLI;
 
 if ( ! defined( 'WP_CLI' ) ) {
@@ -16,10 +19,12 @@ if ( ! defined( 'WP_CLI' ) ) {
 class Commands
 {
     private KeyManager $key_manager;
+    private RotationManager $rotation_manager;
 
-    public function __construct( KeyManager $key_manager )
+    public function __construct( KeyManager $key_manager, RotationManager $rotation_manager )
     {
-        $this->key_manager = $key_manager;
+        $this->key_manager      = $key_manager;
+        $this->rotation_manager = $rotation_manager;
     }
 
     /**
@@ -33,38 +38,38 @@ class Commands
     public function backup( $args, $assoc )
     {
         [$file] = $args;
-        if ( ! $file  ) {
+        if ( ! $file ) {
             $date_str = date( 'Ymd_His' );
-            $file = "nostr_signer_backup_{$date_str}.json";
-            WP_CLI::error( "File path is required. e.g. wp nostrsigner backup $file" );
+            $file     = "nostr_signer_backup_{$date_str}.json";
+            WP_CLI::error( "File path is required. e.g. wp nostrsigner backup {$file}" );
         }
 
         $data = [
             'generated_at' => time(),
-            'blog' => [
-                'npub' => get_option( KeyManager::OPTION_BLOG_NPUB ),
+            'blog'         => [
+                'npub'           => get_option( KeyManager::OPTION_BLOG_NPUB ),
                 'encrypted_nsec' => get_option( KeyManager::OPTION_BLOG_ENCRYPTED_NSEC ),
             ],
-            'users' => [],
+            'users'        => [],
         ];
 
         $users = get_users( [ 'fields' => [ 'ID', 'user_login', 'user_email' ] ] );
-        foreach ( $users as $u ) {
-            $enc = get_user_meta( $u->ID, KeyManager::META_ENCRYPTED_NSEC, true );
-            $npub = get_user_meta( $u->ID, KeyManager::META_NPUB, true );
+        foreach ( $users as $user ) {
+            $enc  = get_user_meta( $user->ID, KeyManager::META_ENCRYPTED_NSEC, true );
+            $npub = get_user_meta( $user->ID, KeyManager::META_NPUB, true );
             if ( $enc ) {
                 $data['users'][] = [
-                    'id' => $u->ID,
-                    'login' => $u->user_login,
-                    'email' => $u->user_email,
-                    'npub' => $npub,
-                    'encrypted_nsec' => $enc,
+                    'id'              => $user->ID,
+                    'login'           => $user->user_login,
+                    'email'           => $user->user_email,
+                    'npub'            => $npub,
+                    'encrypted_nsec'  => $enc,
                 ];
             }
         }
 
         $json = wp_json_encode( $data );
-        if ( file_put_contents( $file, $json ) === false ) {
+        if ( ! is_string( $json ) || file_put_contents( $file, $json ) === false ) {
             WP_CLI::error( "Failed to write backup to {$file}" );
         }
 
@@ -79,15 +84,15 @@ class Commands
     public function keygen( $args, $assoc )
     {
         $key = bin2hex( random_bytes( 32 ) );
-        WP_CLI::line( "Suggested new master key (hex): {$key}" );
-        WP_CLI::line( "Add it to wp-config.php as define('NOSTR_SIGNER_MASTER_KEY', '{$key}');" );
+        WP_CLI::line( "Suggested new key (hex): {$key}" );
+        WP_CLI::line( "Add it to wp-config.php as define('NOSTR_SIGNER_KEY_VX', '{$key}');" );
         if ( isset( $assoc['show'] ) ) {
             WP_CLI::line( "Raw: {$key}" );
         }
     }
 
     /**
-     * Re-encrypt stored encrypted nsec values using a new master key.
+     * Re-encrypt stored encrypted nsec values using a new master key (legacy helper).
      *
      * ## OPTIONS
      *
@@ -104,44 +109,59 @@ class Commands
             WP_CLI::error( 'Old and new master keys are required.' );
         }
 
-        // Use temporary override of constant via Crypto helper if available.
-        if ( ! method_exists( '\NostrSigner\\Crypto', 'recryptAll' ) ) {
+        if ( ! method_exists( '\\NostrSigner\\Crypto', 'recryptAll' ) ) {
             WP_CLI::error( 'Crypto::recryptAll method not available. Please update the plugin.' );
         }
 
         try {
             $count = Crypto::recryptAll( $old_key, $new_key );
             WP_CLI::success( "Re-encrypted {$count} entries." );
-        } catch ( \Exception $e ) {
-            WP_CLI::error( 'Recrypt failed: ' . $e->getMessage() );
+        } catch ( \Throwable $throwable ) {
+            WP_CLI::error( 'Recrypt failed: ' . $throwable->getMessage() );
         }
     }
 
     /**
-     * Rotate: shorthand to keygen + recrypt (interactive guidance).
+     * Re-wrap stored envelopes with the currently active KEK.
      *
      * ## OPTIONS
      *
-     * [--old=<old_key>]
-     * [--new=<new_key>]
+     * [--limit=<limit>]
+     * : Number of records per batch (default 200).
+     *
+     * [--reset]
+     * : Reset the rotation state before processing.
      */
     public function rotate( $args, $assoc )
     {
-        $old = $assoc['old'] ?? null;
-        $new = $assoc['new'] ?? null;
+        if ( ! Crypto::is_master_key_available() ) {
+            WP_CLI::error( 'Key configuration is incomplete. Please configure NOSTR_SIGNER_MASTER_KEY and KEK constants.' );
+        }
 
-        if ( ! $old ) {
-            WP_CLI::warning( 'You did not provide --old; rotation requires the old master key to re-encrypt existing values.' );
+        if ( isset( $assoc['reset'] ) ) {
+            $this->rotation_manager->reset_state();
+            WP_CLI::log( 'Rotation state reset.' );
+        }
+
+        $limit = isset( $assoc['limit'] ) ? max( 1, (int) $assoc['limit'] ) : 200;
+
+        try {
+            $updated = $this->rotation_manager->run_batch( $limit );
+        } catch ( \Throwable $throwable ) {
+            WP_CLI::error( 'Rotation failed: ' . $throwable->getMessage() );
             return;
         }
 
-        if ( ! $new ) {
-            WP_CLI::warning( 'You did not provide --new; generate one with `wp nostrsigner keygen` and set it in wp-config.php before running recrypt.' );
-            return;
-        }
+        WP_CLI::success( sprintf( 'Batch finished ? %d envelopes checked / rewrapped.', $updated ) );
 
-        WP_CLI::line( 'Starting rotation: re-encrypting stored nsecs...' );
-        $this->recrypt( [ $old, $new ], [] );
+        $state = get_option( 'nostr_signer_rotation_state', [] );
+        $done  = is_array( $state ) && ! empty( $state['done_users'] ) && ! empty( $state['done_options'] );
+
+        if ( $done ) {
+            WP_CLI::log( 'All envelopes are within the allowed key versions.' );
+        } else {
+            WP_CLI::log( 'More batches pending. Re-run the command or wait for the cron job.' );
+        }
     }
 
     /**
@@ -176,11 +196,11 @@ class Commands
         }
 
         if ( isset( $data['users'] ) && is_array( $data['users'] ) ) {
-            foreach ( $data['users'] as $u ) {
-                if ( isset( $u['id'], $u['encrypted_nsec'] ) ) {
-                    update_user_meta( (int) $u['id'], KeyManager::META_ENCRYPTED_NSEC, $u['encrypted_nsec'] );
-                    if ( isset( $u['npub'] ) ) {
-                        update_user_meta( (int) $u['id'], KeyManager::META_NPUB, $u['npub'] );
+            foreach ( $data['users'] as $user ) {
+                if ( isset( $user['id'], $user['encrypted_nsec'] ) ) {
+                    update_user_meta( (int) $user['id'], KeyManager::META_ENCRYPTED_NSEC, $user['encrypted_nsec'] );
+                    if ( isset( $user['npub'] ) ) {
+                        update_user_meta( (int) $user['id'], KeyManager::META_NPUB, $user['npub'] );
                     }
                 }
             }
@@ -190,26 +210,27 @@ class Commands
     }
 }
 
-// Register the commands with WP-CLI
 WP_CLI::add_command( 'nostrsigner', function( $args, $assoc ) {
-    $key_manager = new \NostrSigner\KeyManager( new \NostrSigner\NostrService() );
-    $cmd = new Commands( $key_manager );
+    $service      = new NostrService();
+    $key_manager  = new KeyManager( $service );
+    $plugin       = Plugin::instance();
+    $rotation     = $plugin->get_rotation_manager();
+    $commands     = new Commands( $key_manager, $rotation );
 
-    // Map subcommands
-    $sub = $args[0] ?? null;
+    $sub       = $args[0] ?? null;
     $remaining = array_slice( $args, 1 );
 
     switch ( $sub ) {
         case 'backup':
-            return $cmd->backup( $remaining, $assoc );
+            return $commands->backup( $remaining, $assoc );
         case 'keygen':
-            return $cmd->keygen( $remaining, $assoc );
+            return $commands->keygen( $remaining, $assoc );
         case 'recrypt':
-            return $cmd->recrypt( $remaining, $assoc );
+            return $commands->recrypt( $remaining, $assoc );
         case 'rotate':
-            return $cmd->rotate( $remaining, $assoc );
+            return $commands->rotate( $remaining, $assoc );
         case 'restore':
-            return $cmd->restore( $remaining, $assoc );
+            return $commands->restore( $remaining, $assoc );
         default:
             WP_CLI::line( 'Available subcommands: backup, keygen, recrypt, rotate, restore' );
             return;

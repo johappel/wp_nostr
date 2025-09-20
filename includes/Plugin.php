@@ -7,6 +7,7 @@ use NostrSigner\Frontend\DemoPage;
 use NostrSigner\Frontend\ProfileIntegration;
 use NostrSigner\Frontend\WellKnownEndpoint;
 use NostrSigner\RelayPublisher;
+use NostrSigner\RotationManager;
 use NostrSigner\Rest\ImportKeyController;
 use NostrSigner\Rest\SignEventController;
 
@@ -26,8 +27,8 @@ class Plugin
     private SignEventController $rest_controller;
     private ImportKeyController $import_controller;
     private RelayPublisher $relay_publisher;
+    private RotationManager $rotation_manager;
     private AdminPage $admin_page;
-    private DemoPage $demo_page;
     private ProfileIntegration $profile_integration;
     private WellKnownEndpoint $well_known_endpoint;
 
@@ -51,11 +52,13 @@ class Plugin
         $this->relay_publisher     = new RelayPublisher( self::DEFAULT_RELAYS );
         $this->rest_controller     = new SignEventController( $this->key_manager, $this->nostr_service, $this->relay_publisher );
         $this->import_controller   = new ImportKeyController( $this->key_manager, $this->nostr_service );
+        $this->rotation_manager    = new RotationManager();
         $this->admin_page          = new AdminPage( $this->nostr_service );
         $this->demo_page           = new DemoPage();
         $this->profile_integration = new ProfileIntegration( $this->key_manager, $this->nostr_service, self::DEFAULT_RELAYS );
         $this->well_known_endpoint = new WellKnownEndpoint( $this->key_manager, $this->nostr_service, self::DEFAULT_RELAYS );
 
+        $this->rotation_manager->register_hooks();
         add_action( 'admin_enqueue_scripts', [ $this, 'register_admin_assets' ], 0 );
         $this->profile_integration->boot();
         $this->well_known_endpoint->boot();
@@ -120,9 +123,28 @@ class Plugin
             return;
         }
 
-        $message  = __( 'Bitte definieren Sie den NOSTR_SIGNER_MASTER_KEY in Ihrer wp-config.php, um den Nostr Signer zu aktivieren.', 'nostr-signer' );
-        $example  = __( "define('NOSTR_SIGNER_MASTER_KEY', 'ihr-sehr-sicherer-zufaelliger-schluessel-hier');", 'nostr-signer' );
-        echo '<div class="notice notice-error"><p>' . esc_html( $message ) . '</p><p><code>' . esc_html( $example ) . '</code></p></div>';
+        $issues = Crypto::get_configuration_issues();
+        if ( empty( $issues ) ) {
+            $issues[] = __( 'Die Schluesselkonfiguration ist unvollstaendig.', 'nostr-signer' );
+        }
+
+        $intro = __( 'Nostr Signer ist deaktiviert, weil die Schluesselkonfiguration unvollstaendig ist. Bitte pruefen Sie folgende Punkte:', 'nostr-signer' );
+
+        echo '<div class="notice notice-error"><p>' . esc_html( $intro ) . '</p><ul>';
+        foreach ( $issues as $issue ) {
+            echo '<li>' . esc_html( $issue ) . '</li>';
+        }
+        echo '</ul>';
+
+        $example = "define('NOSTR_SIGNER_MASTER_KEY', 'base64:IhreMasterBasis64==');\n"
+            . "define('NOSTR_SIGNER_ACTIVE_KEY_VERSION', 2);\n"
+            . "define('NOSTR_SIGNER_MAX_KEY_VERSIONS', 2);\n"
+            . "define('NOSTR_SIGNER_KEY_V1', 'base64:AltKeyBasis64==');\n"
+            . "define('NOSTR_SIGNER_KEY_V2', 'base64:AktiverKeyBasis64==');";
+
+        echo '<p>' . esc_html__( 'Beispiel-Konfiguration in wp-config.php:', 'nostr-signer' ) . '</p>';
+        echo '<pre><code>' . esc_html( $example ) . '</code></pre>';
+        echo '</div>';
     }
 
     public function maybe_render_gmp_notice(): void
@@ -139,7 +161,16 @@ class Plugin
     {
         if ( ! Crypto::is_master_key_available() ) {
             deactivate_plugins( plugin_basename( NOSTR_SIGNER_PLUGIN_FILE ) );
-            wp_die( esc_html__( 'Aktivierung abgebrochen: Bitte setzen Sie zuerst den NOSTR_SIGNER_MASTER_KEY in der wp-config.php.', 'nostr-signer' ) );
+            $issues = Crypto::get_configuration_issues();
+            $message = '<p>' . esc_html__( 'Aktivierung abgebrochen: Die Schluesselkonfiguration ist unvollstaendig.', 'nostr-signer' ) . '</p>';
+            if ( ! empty( $issues ) ) {
+                $message .= '<ul>';
+                foreach ( $issues as $issue ) {
+                    $message .= '<li>' . esc_html( $issue ) . '</li>';
+                }
+                $message .= '</ul>';
+            }
+            wp_die( wp_kses_post( $message ) );
         }
 
         if ( ! $this->gmp_available ) {
@@ -150,6 +181,7 @@ class Plugin
         $this->demo_page->register_rewrite();
         $this->well_known_endpoint->add_rewrite_rule();
         flush_rewrite_rules();
+        $this->rotation_manager->schedule_events();
 
         $this->key_manager->ensure_blog_key_exists();
     }
@@ -157,8 +189,13 @@ class Plugin
     public function handle_deactivation(): void
     {
         flush_rewrite_rules();
+        $this->rotation_manager->clear_schedule();
     }
 
+    public function get_rotation_manager(): RotationManager
+    {
+        return $this->rotation_manager;
+    }
     public function handle_user_register( int $user_id ): void
     {
         if ( ! Crypto::is_master_key_available() ) {
@@ -172,5 +209,10 @@ class Plugin
         $this->key_manager->create_keys_for_user( $user_id );
     }
 }
+
+
+
+
+
 
 
