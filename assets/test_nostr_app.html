@@ -1,0 +1,342 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Nostr Shortcut Tester</title>
+  <style>
+    :root {
+      font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+      color-scheme: light dark;
+      background: #f3f4f6;
+      color: #111827;
+    }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      display: flex;
+      justify-content: center;
+      padding: 2rem;
+      background: linear-gradient(145deg, #f9fafb, #e5e7eb);
+    }
+    main {
+      width: min(920px, 100%);
+      background: rgba(255, 255, 255, 0.9);
+      border-radius: 18px;
+      box-shadow: 0 20px 45px rgba(15, 23, 42, 0.1);
+      padding: clamp(1.5rem, 4vw, 2.5rem);
+      display: flex;
+      flex-direction: column;
+      gap: 1.5rem;
+    }
+    header {
+      text-align: center;
+      border-bottom: 1px solid rgba(148, 163, 184, 0.4);
+      padding-bottom: 1rem;
+    }
+    header h1 {
+      margin: 0;
+      font-size: clamp(1.6rem, 3vw, 2.2rem);
+    }
+    section {
+      border: 1px solid rgba(148, 163, 184, 0.3);
+      border-radius: 14px;
+      padding: 1rem 2.25rem 1rem 1rem;
+      background: rgba(255, 255, 255, 0.85);
+      display: flex;
+      flex-direction: column;
+      gap: 0.75rem;
+    }
+    h2 {
+      margin: 0;
+      font-size: 1.15rem;
+      color: #1e3a8a;
+    }
+    label {
+      font-weight: 600;
+      display: block;
+      margin-bottom: 0.25rem;
+    }
+    textarea, input, select {
+      width: 100%;
+      padding: 0.6rem 0.75rem;
+      border: 1px solid rgba(148, 163, 184, 0.5);
+      border-radius: 10px;
+      background: rgba(0, 0, 0, 0.9);
+      font: inherit;
+      resize: vertical;
+      min-height: 42px;
+    }
+    textarea {
+      min-height: 96px;
+    }
+    button {
+      align-self: flex-start;
+      padding: 0.55rem 1.1rem;
+      border-radius: 999px;
+      border: none;
+      font-weight: 600;
+      cursor: pointer;
+      background: linear-gradient(135deg, #2563eb, #4f46e5);
+      color: #f8fafc;
+      box-shadow: 0 12px 24px rgba(59, 130, 246, 0.22);
+      transition: transform 0.15s ease, box-shadow 0.15s ease;
+    }
+    button:hover {
+      transform: translateY(-1px);
+      box-shadow: 0 16px 32px rgba(79, 70, 229, 0.25);
+    }
+    button.secondary {
+      background: linear-gradient(135deg, #0f172a, #1e293b);
+      box-shadow: 0 12px 24px rgba(15, 23, 42, 0.25);
+    }
+    .grid {
+      display: grid;
+      gap: 4rem;
+    }
+    .two {
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    }
+    .log-panel {
+      font-family: "Fira Code", "JetBrains Mono", monospace;
+      background: #0f172a;
+      color: #e2e8f0;
+      border-radius: 12px;
+      padding: 1rem;
+      height: 220px;
+      overflow: auto;
+      box-shadow: inset 0 0 0 1px rgba(15, 23, 42, 0.4);
+    }
+    .log-panel h3 {
+      margin-top: 0;
+      font-size: 0.95rem;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      color: #60a5fa;
+    }
+    .pill {
+      display: inline-flex;
+      align-items: center;
+      padding: 0.2rem 0.6rem;
+      border-radius: 999px;
+      background: rgba(59, 130, 246, 0.12);
+      color: #2563eb;
+      font-size: 0.8rem;
+      font-weight: 600;
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <header>
+      <p class="pill">Dev Playground</p>
+      <h1>Nostr Shortcuts Sandbox</h1>
+      <p>Teste Signieren, Senden, Fetching und Live-Events gegen die REST- und Relay-Schnittstellen.</p>
+    </header>
+
+    <section id="config">
+      <h2>Konfiguration</h2>
+      <div class="grid two">
+        <div>
+          <label for="relays">Relays (Komma getrennt)</label>
+          <input id="relays" type="text" placeholder="wss://relay.damus.io, wss://relay.snort.social" />
+        </div>
+        <div>
+          <label for="kind">Kind</label>
+          <input id="kind" type="number" value="1" min="0" />
+        </div>
+      </div>
+      <div>
+        <label for="content">Event-Content</label>
+        <textarea id="content" placeholder="Text fuer das Event"></textarea>
+      </div>
+      <div>
+        <label for="filter">Filter (JSON)</label>
+        <textarea id="filter">{ "kinds": [1] }</textarea>
+      </div>
+      <div>
+        <label for="keyType">Signieren als</label>
+        <select id="keyType">
+          <option value="user">User</option>
+          <option value="blog">Blog</option>
+        </select>
+      </div>
+      <div class="grid two">
+        <button id="btn-sign-only" class="secondary">Signieren</button>
+        <button id="btn-send">Signieren &amp; Senden</button>
+      </div>
+      <div class="grid two">
+        <button id="btn-fetch" class="secondary">Events abrufen</button>
+        <button id="btn-profile">Profil /me laden</button>
+      </div>
+      <div class="grid two">
+        <button id="btn-subscribe" class="secondary">Live-Events starten</button>
+        <button id="btn-unsubscribe">Live-Events stoppen</button>
+      </div>
+    </section>
+
+    <section>
+      <h2>Ausgaben</h2>
+      <div class="log-panel" id="log">
+        <h3>Log</h3>
+        <pre id="log-body"></pre>
+      </div>
+    </section>
+  </main>
+
+  <script>
+    window.NostrSignerConfig = window.NostrSignerConfig || {
+      pluginUrl: './',
+      defaultRelays: ['wss://relay.damus.io', 'wss://relay.snort.social']
+    };
+  </script>
+  <script type="module">
+    const logEl = document.getElementById('log-body');
+    const relaysInput = document.getElementById('relays');
+    const kindInput = document.getElementById('kind');
+    const contentInput = document.getElementById('content');
+    const filterInput = document.getElementById('filter');
+    const keyTypeSelect = document.getElementById('keyType');
+
+    const btnSignOnly = document.getElementById('btn-sign-only');
+    const btnSend = document.getElementById('btn-send');
+    const btnFetch = document.getElementById('btn-fetch');
+    const btnProfile = document.getElementById('btn-profile');
+    const btnSubscribe = document.getElementById('btn-subscribe');
+    const btnUnsubscribe = document.getElementById('btn-unsubscribe');
+
+    const log = (...args) => {
+      const time = new Date().toLocaleTimeString();
+      logEl.textContent += `[${time}] ${args.map((arg) => {
+        if (typeof arg === 'string') return arg;
+        try {
+          return JSON.stringify(arg, null, 2);
+        } catch (error) {
+          return String(arg);
+        }
+      }).join(' ')}\n`;
+      logEl.scrollTop = logEl.scrollHeight;
+    };
+
+    const parseRelays = () => {
+      const value = relaysInput.value.trim();
+      if (!value) {
+        return undefined;
+      }
+      return value.split(',').map((item) => item.trim()).filter(Boolean);
+    };
+
+    const parseFilter = () => {
+      const value = filterInput.value.trim();
+      if (!value) {
+        return {};
+      }
+      try {
+        return JSON.parse(value);
+      } catch (error) {
+        log('Filter JSON ungueltig:', error.message);
+        return {};
+      }
+    };
+
+    let unsubscribe = null;
+
+    const moduleUrl = `${window.NostrSignerConfig.pluginUrl}assets/js/nostr-app.js`;
+    const nostrModule = await import(moduleUrl);
+    const {
+      configureNostr,
+      nostr_send,
+      nostr_fetch,
+      nostr_me,
+      nostr_onEvent,
+    } = nostrModule;
+
+    configureNostr({
+      defaultRelays: window.NostrSignerConfig.defaultRelays,
+      signUrl: window.NostrSignerConfig.signUrl || '/wp-json/nostr-signer/v1/sign-event',
+      meUrl: window.NostrSignerConfig.meUrl || '/wp-json/nostr-signer/v1/me',
+      nonce: window.NostrSignerConfig.nonce || null,
+    });
+
+    const buildEvent = () => ({
+      kind: Number(kindInput.value) || 1,
+      created_at: Math.floor(Date.now() / 1000),
+      tags: [],
+      content: contentInput.value.trim() || 'Test Event',
+    });
+
+    btnSignOnly.addEventListener('click', async () => {
+      try {
+        const event = await nostr_send(buildEvent(), keyTypeSelect.value, parseRelays(), { publish: false });
+        log('Signiertes Event:', event.event);
+      } catch (error) {
+        log('Fehler beim Signieren:', error.message);
+      }
+    });
+
+    btnSend.addEventListener('click', async () => {
+      try {
+        const result = await nostr_send(buildEvent(), keyTypeSelect.value, parseRelays());
+        log('Event versendet:', result);
+      } catch (error) {
+        log('Fehler beim Senden:', error.message);
+      }
+    });
+
+    btnFetch.addEventListener('click', async () => {
+      try {
+        const events = await nostr_fetch(parseFilter(), parseRelays());
+        log('Fetch-Ergebnis:', events);
+      } catch (error) {
+        log('Fehler beim Laden:', error.message);
+      }
+    });
+
+    btnProfile.addEventListener('click', async () => {
+      try {
+        const profile = await nostr_me();
+        log('Profil:', profile);
+      } catch (error) {
+        log('Fehler /me:', error.message);
+      }
+    });
+
+    btnSubscribe.addEventListener('click', async () => {
+      if (unsubscribe) {
+        log('Subscription bereits aktiv. Bitte zuerst stoppen.');
+        return;
+      }
+      try {
+        unsubscribe = await nostr_onEvent(
+          (event, relay) => log('Live-Event', { relay, id: event?.id, kind: event?.kind }),
+          parseRelays(),
+          parseFilter(),
+          {
+            onEose: (relay) => log('EOSE von', relay),
+            onError: (error, relay) => log('Subscription-Fehler', relay, error?.message || error),
+            onClose: (reason, relay) => log('Subscription beendet', relay, reason),
+          }
+        );
+        log('Subscription gestartet.');
+      } catch (error) {
+        unsubscribe = null;
+        log('Fehler beim Starten der Subscription:', error.message);
+      }
+    });
+
+    btnUnsubscribe.addEventListener('click', () => {
+      if (unsubscribe) {
+        try {
+          unsubscribe();
+          log('Subscription gestoppt.');
+        } catch (error) {
+          log('Fehler beim Stoppen:', error.message);
+        }
+        unsubscribe = null;
+      } else {
+        log('Keine aktive Subscription.');
+      }
+    });
+  </script>
+</body>
+</html>

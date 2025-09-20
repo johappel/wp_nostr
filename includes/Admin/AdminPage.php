@@ -58,7 +58,7 @@ class AdminPage
             // fallback to unbundled module for development
             wp_enqueue_script(
                 'nostr-signer-spa',
-                NOSTR_SIGNER_PLUGIN_URL . 'assets/js/spa-nostr-app.js',
+                NOSTR_SIGNER_PLUGIN_URL . 'assets/js/spa-demo-app.js',
                 [],
                 NOSTR_SIGNER_PLUGIN_VERSION,
                 true
@@ -155,4 +155,5 @@ class AdminPage
         echo '</div>';
     }
 }
+
 

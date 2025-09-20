@@ -1,6 +1,6 @@
 # SPA Demo — Bedienung und Integration
 
-Diese Datei beschreibt die kleine Single-Page-Demo `assets/spa-demo.html` und das zugehörige JavaScript `assets/js/spa-nostr-app.js`. Ziel der Demo: Ein Nostr-Event im Browser zu erstellen, serverseitig signieren zu lassen und optional an einen Relay zu publizieren.
+Diese Datei beschreibt die kleine Single-Page-Demo `assets/spa-demo.html` und das zugehörige JavaScript `assets/js/spa-demo-app.js`. Ziel der Demo: Ein Nostr-Event im Browser zu erstellen, serverseitig signieren zu lassen und optional an einen Relay zu publizieren.
 
 Die SPA ist bewusst minimal gehalten und eignet sich als Ausgangspunkt für eigene Integrationen.
 
@@ -8,7 +8,7 @@ Die SPA ist bewusst minimal gehalten und eignet sich als Ausgangspunkt für eige
 
 ## Dateien
 - `assets/spa-demo.html` — die HTML-Seite mit Formular
-- `assets/js/spa-nostr-app.js` — Modul, das REST-Aufrufe macht und Relays kontaktiert
+- `assets/js/spa-demo-app.js` — Modul, das REST-Aufrufe macht und Relays kontaktiert
 
 ## Formularfelder (Erklärung)
 - `Relay-URL` (`#relay-url`): WebSocket-URL des gewünschten Relays (z. B. `wss://relay.damus.io`). Wird nur benötigt, wenn Sie nach dem Signieren direkt publizieren wollen.
@@ -22,7 +22,7 @@ Die SPA ist bewusst minimal gehalten und eignet sich als Ausgangspunkt für eige
 ```markdown
 # SPA Demo — Bedienung und Integration
 
-Diese Datei beschreibt die kleine Single-Page-Demo `assets/spa-demo.html` und das zugehörige JavaScript `assets/js/spa-nostr-app.js`. Ziel der Demo: Ein Nostr-Event im Browser zu erstellen, serverseitig signieren zu lassen und optional an einen Relay zu publizieren.
+Diese Datei beschreibt die kleine Single-Page-Demo `assets/spa-demo.html` und das zugehörige JavaScript `assets/js/spa-demo-app.js`. Ziel der Demo: Ein Nostr-Event im Browser zu erstellen, serverseitig signieren zu lassen und optional an einen Relay zu publizieren.
 
 Die SPA ist bewusst minimal gehalten und eignet sich als Ausgangspunkt für eigene Integrationen.
 
@@ -30,7 +30,7 @@ Die SPA ist bewusst minimal gehalten und eignet sich als Ausgangspunkt für eige
 
 ## Dateien
 - `assets/spa-demo.html` — die HTML-Seite mit Formular
-- `assets/js/spa-nostr-app.js` — Modul, das REST-Aufrufe macht und Relays kontaktiert
+- `assets/js/spa-demo-app.js` — Modul, das REST-Aufrufe macht und Relays kontaktiert
 
 ## Formularfelder (Erklärung)
 - `Relay-URL` (`#relay-url`): WebSocket-URL des gewünschten Relays (z. B. `wss://relay.damus.io`). Wird nur benötigt, wenn du nach dem Signieren direkt publizieren willst.
@@ -60,7 +60,7 @@ Die SPA erwartet die globale Variable `window.NostrSignerConfig` mit mindestens 
 In WordPress kann das beim Enqueue eines Scripts wie folgt injiziert werden:
 
 ```php
-wp_enqueue_script('nostr-spa-demo', plugin_dir_url(__FILE__) . 'assets/js/spa-nostr-app.js', [], null, true);
+wp_enqueue_script('nostr-spa-demo', plugin_dir_url(__FILE__) . 'assets/js/spa-demo-app.js', [], null, true);
 wp_localize_script('nostr-spa-demo', 'NostrSignerConfig', [
   'apiBase' => rest_url(),
   'nonce'   => wp_create_nonce('wp_rest'),

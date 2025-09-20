@@ -1,12 +1,12 @@
 <?php
 /**
- * Plugin Name: Nostr Signer
- * Plugin URI: https://example.com/wp_nostr
+ * Plugin Name: WP Nostr Signer
+ * Plugin URI: https://github.com/johappel/wp_nostr
  * Description: Ermoeglicht das sichere serverseitige Signieren von Nostr-Events fuer Benutzer und den Blog.
  * Version: 1.0
  * Author: johappel
  * Author URI: https://github.com/johappel/
- * Settings URI: options-general.php?page=nostr-signer
+ * OPTIONS URI: options-general.php?page=nostr-signer
  * Requires at least: 6.0
  * License: GPL2
  * Text Domain: nostr-signer

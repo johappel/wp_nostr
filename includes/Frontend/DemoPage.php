@@ -17,6 +17,10 @@ class DemoPage
     {
         add_rewrite_rule( '^nostr-signer/?$', 'index.php?' . self::QUERY_VAR . '=1', 'top' );
         add_rewrite_tag( '%' . self::QUERY_VAR . '%', '1' );
+        add_rewrite_rule( '^nostr-sandbox/?$', 'index.php?' . self::QUERY_VAR . '=1', 'top' );
+        add_rewrite_tag( '%' . self::QUERY_VAR . '%', '1' );
+        add_rewrite_rule( '^nostr-test/?$', 'index.php?' . self::QUERY_VAR . '=1', 'top' );
+        add_rewrite_tag( '%' . self::QUERY_VAR . '%', '1' );
     }
 
     public function register_query_var( array $vars ): array
@@ -36,25 +40,82 @@ class DemoPage
             exit;
         }
 
-        $config = [
-            'meUrl'   => rest_url( 'nostr-signer/v1/me' ),
-            'signUrl' => rest_url( 'nostr-signer/v1/sign-event' ),
-            'nonce'   => wp_create_nonce( 'wp_rest' ),
-        ];
+        $default_relays = (array) apply_filters(
+            'nostr_signer_default_relays',
+            [
+                'wss://relay.damus.io',
+                'wss://relay.snort.social',
+            ]
+        );
 
-        $html_path = NOSTR_SIGNER_PLUGIN_DIR . 'assets/test.html';
-        $html      = file_get_contents( $html_path );
+        $default_relays = array_values(
+            array_filter(
+                array_map(
+                    static fn( $relay ) => is_string( $relay ) ? trim( $relay ) : '',
+                    $default_relays
+                ),
+                static fn( $relay ) => $relay !== ''
+            )
+        );
 
-        if ( $html === false ) {
-            wp_die( esc_html__( 'Die Demo-Datei test.html wurde nicht gefunden.', 'nostr-signer' ) );
+        if ( empty( $default_relays ) ) {
+            $default_relays = [
+                'wss://relay.damus.io',
+                'wss://relay.snort.social',
+            ];
         }
 
-        $placeholders = [
-            '__CONFIG_JSON__' => wp_json_encode( $config, JSON_UNESCAPED_SLASHES ),
-            '__PLUGIN_URL__'  => esc_url( NOSTR_SIGNER_PLUGIN_URL ),
+        $config = [
+            'meUrl'         => rest_url( 'nostr-signer/v1/me' ),
+            'signUrl'       => rest_url( 'nostr-signer/v1/sign-event' ),
+            'nonce'         => wp_create_nonce( 'wp_rest' ),
+            'loginUrl'      => wp_login_url( home_url( '/nostr-signer' ) ),
+            'logoutUrl'     => wp_logout_url( home_url( '/nostr-signer' ) ),
+            'apiBase'       => untrailingslashit( rest_url() ),
+            'defaultRelays' => $default_relays,
         ];
 
-        $html = str_replace( array_keys( $placeholders ), array_values( $placeholders ), $html );
+        // wenn ^nostr-sandbox/?$ dann demo modus
+        if ( preg_match( '#^/nostr-sandbox/?$#', $_SERVER['REQUEST_URI'] ?? '' ) ) {
+            $html_path = NOSTR_SIGNER_PLUGIN_DIR . 'assets/test_nostr_app.html';
+        } else if ( preg_match( '#^/nostr-test/?$#', $_SERVER['REQUEST_URI'] ?? '' ) ) {
+            $html_path = NOSTR_SIGNER_PLUGIN_DIR . 'assets/test.html';
+        } else {
+            $html_path = NOSTR_SIGNER_PLUGIN_DIR . 'assets/spa-demo.html';
+        }
+        $html      = file_get_contents( $html_path );
+
+        // prepare for relative URLs
+
+        // add <base href="https://www.example.com/" /> to head to make relative URLs work
+        $base_tag = '<base href="' . esc_url( NOSTR_SIGNER_PLUGIN_URL ) . '" />';
+        $html     = preg_replace( '/<head>/', '<head>' . $base_tag, $html, 1 );
+
+        // prepare for config injection
+
+        if ( strpos( $html, '__CONFIG_JSON__' ) === false ) {
+        
+            // inject config as JS object with this structure:
+            
+            $script_tags = '<script>';
+            $script_tags .= 'window.NostrSignerConfig = {};';
+            $script_tags .= 'window.NostrSignerConfig.pluginUrl = ' . wp_json_encode( NOSTR_SIGNER_PLUGIN_URL ) . ';';
+            $script_tags .= 'window.NostrSignerConfig.signUrl = ' . wp_json_encode( $config['signUrl'] ) . ';';
+            $script_tags .= 'window.NostrSignerConfig.meUrl = ' . wp_json_encode( $config['meUrl'] ) . ';';
+            $script_tags .= 'window.NostrSignerConfig.nonce = ' . wp_json_encode( $config['nonce'] ) . ';';
+            $script_tags .= 'window.NostrSignerConfig.defaultRelays = ' . wp_json_encode( $config['defaultRelays'] ) . ';';
+            $script_tags .= '</script>';
+
+            $html = preg_replace( '/<\/head>/', $script_tags . '</head>', $html, 1 );
+        }else{
+
+            $placeholders = [
+                '__CONFIG_JSON__' => wp_json_encode( $config, JSON_UNESCAPED_SLASHES ),
+                '__PLUGIN_URL__'  => esc_url( NOSTR_SIGNER_PLUGIN_URL ),
+            ];
+            $html = str_replace( array_keys( $placeholders ), array_values( $placeholders ), $html );
+            
+        }
 
         status_header( 200 );
         nocache_headers();
@@ -63,4 +124,3 @@ class DemoPage
         exit;
     }
 }
-
