@@ -360,9 +360,13 @@ function buildFilter() {
       authors.push(state.blogPubkey);
     }
   }
-  if (state.filter.scope === 'user' && !state.userPubkey) {
-    showToast('Eigenes Profil noch nicht geladen. Bitte erneut versuchen.', 'error');
-  }
+  // wait 3 seconds after last change before showing toast
+  setTimeout(() => {
+    if (state.filter.scope === 'user' && !state.userPubkey) {
+      showToast('Eigenes Profil noch nicht geladen. Bitte erneut versuchen.', 'error');
+    }
+  }, 3000);
+  
   if (state.filter.scope === 'blog' && !state.blogPubkey) {
     showToast('Blog-Pubkey nicht bekannt. Bitte unter Profil pruefen.', 'error');
   }

@@ -422,3 +422,38 @@ export async function nostr_me(options = {}) {
   return client.getProfile();
 }
 
+/**
+ * Short-Cut fuer Live-Empfang: richtet eine Subscription auf den angegebenen
+ * Relays ein und ruft den Callback fuer jedes passende Event auf.
+ * Beispiel:
+ * const stop = await nostr_onEvent(
+ *   (event, relay) => console.log(`[${relay}]`, event.id),
+ *   ['wss://relay.damus.io'],
+ *   { kinds: [1] },
+ *   { onEose: (relay) => console.log('EOSE von', relay) }
+ * );
+ * // spaeter: stop();
+ */
+export async function nostr_onEvent(callback, relays, filter = {}, options = {}) {
+  if (typeof callback !== 'function') {
+    throw new Error('Callback muss eine Funktion sein.');
+  }
+  const { clientConfig, onEose, onError, onClose } = options || {};
+  const client = getSharedClient(clientConfig);
+  const relayList = relays === undefined || relays === null
+    ? undefined
+    : Array.isArray(relays)
+      ? relays
+      : [relays];
+  const filterObject = (filter && typeof filter === 'object') ? filter : {};
+  const unsubscribe = await client.subscribe(filterObject, relayList, {
+    onEvent(event, relayUrl) {
+      callback(event, relayUrl);
+    },
+    onEose: typeof onEose === 'function' ? onEose : undefined,
+    onError: typeof onError === 'function' ? onError : undefined,
+    onClose: typeof onClose === 'function' ? onClose : undefined
+  });
+  return unsubscribe;
+}
+
