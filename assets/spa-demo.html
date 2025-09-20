@@ -112,11 +112,17 @@
       color: var(--muted);
       font-size: 0.95rem;
     }
+    #profile-status[hidden] {
+      display: none;
+  }
     .profile-card {
       display: grid;
       grid-template-columns: auto 1fr;
       gap: 1.2rem;
       align-items: center;
+    }
+    .profile-card[hidden] {
+      display: none;
     }
     .profile-card img {
       width: 80px;

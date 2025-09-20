@@ -54,7 +54,10 @@ const state = {
   relayStatus: new Map(),
   refreshTimer: null,
   blogPubkey: null,
+  blogNpub: '',
   userPubkey: null,
+  userNpub: '',
+  signAs: 'user',
   activeSubscriptions: []
 };
 let nostr = null;
@@ -255,10 +258,12 @@ function renderProfile(data) {
   if (data.user?.pubkey?.npub) {
     metaEntries.push({ label: 'Meine npub', value: data.user.pubkey.npub });
     state.userPubkey = data.user.pubkey.hex || null;
+    state.userNpub = data.user.pubkey.npub || '';
   }
   if (data.blog?.pubkey?.npub) {
     metaEntries.push({ label: 'Blog npub', value: data.blog.pubkey.npub });
     state.blogPubkey = data.blog.pubkey.hex || null;
+    state.blogNpub = data.blog.pubkey.npub || '';
     if (!ui.blogPubkey.value.trim()) {
       ui.blogPubkey.value = data.blog.pubkey.npub;
     }
@@ -276,6 +281,64 @@ function renderProfile(data) {
     ui.profileMeta.appendChild(span);
   });
   updateAuthControls();
+  syncSignerSelection({ persist: false, fromProfile: true });
+}
+
+function syncSignerSelection(options = {}) {
+  const { persist = true, fromProfile = false } = options;
+  const nextSelection = ui.signAs.value || 'user';
+
+  if (state.signAs === 'blog' && nextSelection !== 'blog') {
+    const currentBlogValue = ui.blogPubkey.value.trim();
+    if (currentBlogValue) {
+      state.blogNpub = currentBlogValue;
+      if (!state.profile?.blog?.pubkey?.hex) {
+        state.blogPubkey = getManualBlogHex();
+      }
+    }
+  }
+
+  state.signAs = nextSelection;
+
+  if (nextSelection === 'blog') {
+    let blogValue = state.blogNpub;
+    if (!blogValue && state.profile?.blog?.pubkey?.npub) {
+      blogValue = state.profile.blog.pubkey.npub;
+      state.blogNpub = blogValue;
+    }
+    if (!blogValue) {
+      const storedBlog = storage.get(STORAGE_KEYS.blogPubkey, '');
+      if (storedBlog) {
+        blogValue = storedBlog;
+        state.blogNpub = blogValue;
+      }
+    }
+    ui.blogPubkey.value = blogValue || '';
+    if (blogValue) {
+      if (state.profile?.blog?.pubkey?.hex) {
+        state.blogPubkey = state.profile.blog.pubkey.hex;
+      } else {
+        state.blogPubkey = getManualBlogHex();
+      }
+      if (persist) {
+        storage.set(STORAGE_KEYS.blogPubkey, blogValue);
+      }
+    } else {
+      state.blogPubkey = null;
+      if (persist) {
+        storage.set(STORAGE_KEYS.blogPubkey, '');
+      }
+    }
+  } else {
+    let userValue = state.userNpub;
+    if (!userValue && state.profile?.user?.pubkey?.npub) {
+      userValue = state.profile.user.pubkey.npub;
+      state.userNpub = userValue;
+    }
+    if (userValue || fromProfile) {
+      ui.blogPubkey.value = userValue || '';
+    }
+  }
 }
 
 async function loadProfile() {
@@ -552,13 +615,15 @@ function loadStoredValues() {
   const storedContent = storage.get(STORAGE_KEYS.content, '');
   ui.content.value = storedContent;
 
-  const storedSignAs = storage.get(STORAGE_KEYS.signAs, 'user');
+  const storedSignAs = storage.get(STORAGE_KEYS.signAs, 'user') || 'user';
   ui.signAs.value = storedSignAs;
+  state.signAs = storedSignAs;
 
   const storedBlog = storage.get(STORAGE_KEYS.blogPubkey, '');
   if (storedBlog) {
     ui.blogPubkey.value = storedBlog;
   }
+  state.blogNpub = storedBlog || '';
 
   const storedFilterKind = storage.get(STORAGE_KEYS.filterKind, '');
   ui.filterKind.value = storedFilterKind;
@@ -616,7 +681,11 @@ function persistFormState() {
   storage.set(STORAGE_KEYS.kind, Number(ui.eventKind.value) || 1);
   storage.set(STORAGE_KEYS.content, ui.content.value);
   storage.set(STORAGE_KEYS.signAs, ui.signAs.value);
-  storage.set(STORAGE_KEYS.blogPubkey, ui.blogPubkey.value.trim());
+  if (state.signAs === 'blog') {
+    const trimmedBlog = ui.blogPubkey.value.trim();
+    state.blogNpub = trimmedBlog;
+    storage.set(STORAGE_KEYS.blogPubkey, trimmedBlog);
+  }
 }
 
 function persistFilterState() {
@@ -803,10 +872,19 @@ function registerEventListeners() {
   ui.relayInput.addEventListener('change', updateRelaysFromInput);
   ui.eventKind.addEventListener('change', persistFormState);
   ui.content.addEventListener('input', () => storage.set(STORAGE_KEYS.content, ui.content.value));
-  ui.signAs.addEventListener('change', persistFormState);
+  ui.signAs.addEventListener('change', () => {
+    syncSignerSelection();
+    persistFormState();
+  });
   ui.blogPubkey.addEventListener('change', () => {
-    storage.set(STORAGE_KEYS.blogPubkey, ui.blogPubkey.value.trim());
-    state.blogPubkey = getManualBlogHex();
+    const value = ui.blogPubkey.value.trim();
+    if (state.signAs === 'blog') {
+      state.blogNpub = value;
+      storage.set(STORAGE_KEYS.blogPubkey, value);
+      state.blogPubkey = getManualBlogHex();
+    } else {
+      state.userNpub = value;
+    }
   });
   ui.signOnlyButton.addEventListener('click', () => handleSignRequest(false));
   ui.publishButton.addEventListener('click', (event) => {
@@ -877,6 +955,7 @@ function init() {
   loadStoredValues();
   renderTagRowsFromStorage();
   state.blogPubkey = getManualBlogHex();
+  syncSignerSelection({ persist: false });
   registerEventListeners();
   if (state.relays.length) {
     state.relays.forEach((url) => updateRelayStatus(url, 'connecting'));
