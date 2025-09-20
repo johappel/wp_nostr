@@ -1,8 +1,8 @@
-# Nostr Signer â€” WordPress Plugin
+# WP Nostr Signer - WordPress Plugin
 
 Dieses Plugin stellt eine sichere, serverseitige Infrastruktur bereit, um Nostr-Events innerhalb eines WordPress-Blogs zu signieren. Es verwaltet pro-Benutzer-SchlÃ¼sselpaare sowie ein globales Blog-SchlÃ¼sselpaar und bietet REST-API-Endpunkte, die von beliebigen Nostr-Apps konsumiert werden kÃ¶nnen.
 
-Wichtig: Alle `nsec`-Private-Keys werden verschlüsselt in der Datenbank gespeichert. Das Plugin nutzt ein Enveloping-Verfahren mit Key-Wrapping: In `wp-config.php` müssen der dauerhafte Master-Schlüssel `NOSTR_SIGNER_MASTER_KEY` sowie mindestens ein Key-Encryption-Key (`NOSTR_SIGNER_KEY_Vx`) hinterlegt sein. Die aktive KEK-Version steuern Sie über `NOSTR_SIGNER_ACTIVE_KEY_VERSION`.
+Wichtig: Alle `nsec`-Private-Keys werden verschlï¿½sselt in der Datenbank gespeichert. Das Plugin nutzt ein Enveloping-Verfahren mit Key-Wrapping: In `wp-config.php` mï¿½ssen der dauerhafte Master-Schlï¿½ssel `NOSTR_SIGNER_MASTER_KEY` sowie mindestens ein Key-Encryption-Key (`NOSTR_SIGNER_KEY_Vx`) hinterlegt sein. Die aktive KEK-Version steuern Sie ï¿½ber `NOSTR_SIGNER_ACTIVE_KEY_VERSION`.
 
 ## Inhalt
 - **Installation & Aktivierung**
@@ -16,7 +16,7 @@ Wichtig: Alle `nsec`-Private-Keys werden verschlüsselt in der Datenbank gespeich
 ## Installation
 
 1. Plugin in das WordPress `plugins`-Verzeichnis kopieren oder per Composer/ZIP installieren.
-2. In `wp-config.php` die Schlüssel-Konfiguration setzen (Beispiel):
+2. In `wp-config.php` die Schlï¿½ssel-Konfiguration setzen (Beispiel):
 
 ```php
 define('NOSTR_SIGNER_MASTER_KEY', 'base64:BitteMitSicheremZufallswertErsetzen=');
@@ -26,20 +26,20 @@ define('NOSTR_SIGNER_KEY_V1', 'base64:AltKeyBasis64==');
 define('NOSTR_SIGNER_KEY_V2', 'base64:AktiverKeyBasis64==');
 ```
 
-3. Plugin im WordPress-Admin aktivieren. Beim Aktivieren werden (falls noch nicht vorhanden) die Blog-Schlüssel erzeugt und in den `wp_options` gespeichert (der `nsec` ist verschlüsselt).
+3. Plugin im WordPress-Admin aktivieren. Beim Aktivieren werden (falls noch nicht vorhanden) die Blog-Schlï¿½ssel erzeugt und in den `wp_options` gespeichert (der `nsec` ist verschlï¿½sselt).
 
-Hinweis: Falls `NOSTR_SIGNER_MASTER_KEY` oder die für die aktive Version benötigten `NOSTR_SIGNER_KEY_Vx`-Werte fehlen, deaktiviert das Plugin alle kryptografischen Funktionen und zeigt eine Admin-Notice.
+Hinweis: Falls `NOSTR_SIGNER_MASTER_KEY` oder die fï¿½r die aktive Version benï¿½tigten `NOSTR_SIGNER_KEY_Vx`-Werte fehlen, deaktiviert das Plugin alle kryptografischen Funktionen und zeigt eine Admin-Notice.
 
 ## Konfiguration
 
-- `NOSTR_SIGNER_MASTER_KEY` in `wp-config.php` (wird u. a. für temporäre Importschlüssel und Legacy-Daten benötigt).
-- `NOSTR_SIGNER_ACTIVE_KEY_VERSION` (int >= 1) bestimmt, welcher KEK zum Verschlüsseln neuer Werte verwendet wird.
-- `NOSTR_SIGNER_MAX_KEY_VERSIONS` legt fest, wie viele KEK-Versionen parallel akzeptiert werden (für Rotation).
+- `NOSTR_SIGNER_MASTER_KEY` in `wp-config.php` (wird u. a. fï¿½r temporï¿½re Importschlï¿½ssel und Legacy-Daten benï¿½tigt).
+- `NOSTR_SIGNER_ACTIVE_KEY_VERSION` (int >= 1) bestimmt, welcher KEK zum Verschlï¿½sseln neuer Werte verwendet wird.
+- `NOSTR_SIGNER_MAX_KEY_VERSIONS` legt fest, wie viele KEK-Versionen parallel akzeptiert werden (fï¿½r Rotation).
 - `NOSTR_SIGNER_KEY_V{n}` (z. B. `NOSTR_SIGNER_KEY_V1`, `NOSTR_SIGNER_KEY_V2`) enthalten jeweils einen 32-Byte-Kek in Base64/Hex/Raw.
-- Standardmäßig werden pro Benutzer `nostr_npub` (klartext) und `nostr_encrypted_nsec` (verschlüsselt) in `user_meta` abgelegt.
+- Standardmï¿½ï¿½ig werden pro Benutzer `nostr_npub` (klartext) und `nostr_encrypted_nsec` (verschlï¿½sselt) in `user_meta` abgelegt.
 - Blog-Keys werden unter `nostr_blog_npub` und `nostr_blog_encrypted_nsec` in `wp_options` gespeichert.
 - Private SchlÃ¼ssel (`nsec`) werden in der DB nur verschlÃ¼sselt abgelegt und niemals an den Client gesendet.
-- Entschlüsseln des gespeicherten Envelopes (DEK wird mit dem aktiven KEK freigelegt; Legacy-Werte fallen auf den Master-Schlüssel zurück)
+- Entschlï¿½sseln des gespeicherten Envelopes (DEK wird mit dem aktiven KEK freigelegt; Legacy-Werte fallen auf den Master-Schlï¿½ssel zurï¿½ck)
 - REST-Endpunkte verlangen Authentifizierung und WordPress-Nonce (CSRF-Schutz).
 
 ## REST API â€” Ãœbersicht
@@ -48,7 +48,7 @@ Namespace: `nostr-signer/v1`
 
 - `POST /sign-event` â€” Signiert ein (unvollstÃ¤ndiges) Nostr-Event mit dem `user`- oder `blog`-Key.
 - `GET /me` â€” Liefert Metadaten zu aktuellem Benutzer und Blog (npub/hex, avatar, blog-name, etc.).
-- `POST /import-key` — (Admin/Profil) sichere Import-Route für bestehende `nsec`-Keys (Client-seitige Verschlüsselung mit temporärem Schlüssel, serverseitige Re-Verschlüsselung mit dem aktiven KEK).
+- `POST /import-key` ï¿½ (Admin/Profil) sichere Import-Route fï¿½r bestehende `nsec`-Keys (Client-seitige Verschlï¿½sselung mit temporï¿½rem Schlï¿½ssel, serverseitige Re-Verschlï¿½sselung mit dem aktiven KEK).
 
 Alle POST-Routen erfordern:
 - Authentifizierten WordPress-Benutzer (eingeloggter Benutzer).
@@ -73,7 +73,7 @@ Pflichtfelder im `event`-Objekt sind nicht streng â€” das Plugin fÃ¼gt `created_
 Beispiel-Ablauf (serverseitig):
 - Nonce prÃ¼fen
 - VerschlÃ¼sselten `nsec` aus `user_meta` oder `wp_options` laden
-- Entschlüsseln des gespeicherten Envelopes (DEK wird mit dem aktiven KEK freigelegt; Legacy-Werte fallen auf den Master-Schlüssel zurück).
+- Entschlï¿½sseln des gespeicherten Envelopes (DEK wird mit dem aktiven KEK freigelegt; Legacy-Werte fallen auf den Master-Schlï¿½ssel zurï¿½ck).
 - Event signieren (`NostrService::signEvent`)
 - Klartext-`nsec` sofort `unset()`
 - Signiertes Event als JSON zurÃ¼ckgeben
@@ -169,7 +169,7 @@ Wenn du `nostr-tools` clientseitig verwendest, kannst du das vom Server signiert
 
 ### 4) Import eines bestehenden `nsec` (sicherer Workflow)
 
-Kurzbeschreibung: Der `nsec` wird clientseitig mit einem temporären Schlüssel verschlüsselt und dann an den Server gesendet. Der Server entschlüsselt den temporären Layer und verpackt den Klartext sofort erneut in einen Envelope, der mit dem aktiven `NOSTR_SIGNER_KEY_V{NOSTR_SIGNER_ACTIVE_KEY_VERSION}` gesichert wird.
+Kurzbeschreibung: Der `nsec` wird clientseitig mit einem temporï¿½ren Schlï¿½ssel verschlï¿½sselt und dann an den Server gesendet. Der Server entschlï¿½sselt den temporï¿½ren Layer und verpackt den Klartext sofort erneut in einen Envelope, der mit dem aktiven `NOSTR_SIGNER_KEY_V{NOSTR_SIGNER_ACTIVE_KEY_VERSION}` gesichert wird.
 
 Schritte (vereinfacht):
 
@@ -320,7 +320,7 @@ add_action('wp_enqueue_scripts', 'nostr_enqueue_spa_prod');
 ## Troubleshooting â€” hÃ¤ufige Probleme
 
 - **403 Nonce-Fehler**: Stellen Sie sicher, dass der Header `X-WP-Nonce` gesetzt ist und der Benutzer eingeloggt ist. In der SPA wird `NostrSignerConfig.nonce` fÃ¼r diesen Zweck injiziert.
-- **Schlüssel-Config fehlt**: Wenn `NOSTR_SIGNER_MASTER_KEY` oder der aktive `NOSTR_SIGNER_KEY_Vx` nicht gesetzt sind, werden Verschlüsselungs- und Signierfunktionen deaktiviert. Ergänzen Sie die Konstanten in `wp-config.php`.
+- **Schlï¿½ssel-Config fehlt**: Wenn `NOSTR_SIGNER_MASTER_KEY` oder der aktive `NOSTR_SIGNER_KEY_Vx` nicht gesetzt sind, werden Verschlï¿½sselungs- und Signierfunktionen deaktiviert. Ergï¿½nzen Sie die Konstanten in `wp-config.php`.
 - **nostr-tools importiert nicht**: Vergewissern Sie sich, dass Sie die gebÃ¼ndelte SPA-Version verwenden oder `nostr-tools` via Bundler in das Bundle aufgenommen wurde.
 - **Relay-Verbindung scheitert**: PrÃ¼fen Sie die Relay-URL (WebSocket, `wss://`) und CORS/Netzwerkregeln. Einige Relays benÃ¶tigen zusÃ¤tzliche Authentifizierung oder blockieren Clients.
 
@@ -339,12 +339,12 @@ Weitere, ausfÃ¼hrliche Hinweise zu Backup, Rotation und NotfallmaÃŸnahmen findes
 Das Plugin stellt eine Reihe von WP-CLI-Helpers bereit, um Backups, Rotation und Wiederherstellung zu unterstÃ¼tzen. Die Commands sind verfÃ¼gbar, wenn sich die WP-Installation mit WP-CLI aufruft.
 
 - `wp nostrsigner backup <file>` â€” Exportiert alle verschlÃ¼sselten `nsec`-Werte (Blog + Benutzer) in eine JSON-Datei.
-- `wp nostrsigner keygen` — Erzeugt einen neuen 32-Byte-Schlüssel (Base16). Nutzen Sie ihn z.?B. als neuen `NOSTR_SIGNER_KEY_V{n}` oder als Master-Key, bevor Sie Rotation/Import durchführen.
+- `wp nostrsigner keygen` ï¿½ Erzeugt einen neuen 32-Byte-Schlï¿½ssel (Base16). Nutzen Sie ihn z.?B. als neuen `NOSTR_SIGNER_KEY_V{n}` oder als Master-Key, bevor Sie Rotation/Import durchfï¿½hren.
 - `wp nostrsigner recrypt <old_key> <new_key>` â€” Rekryptiert alle gespeicherten `nsec`-Werte von `old_key` auf `new_key`.
 - `wp nostrsigner rotate --old=<old_key> --new=<new_key>` â€” Wrapper, der `recrypt` mit den angegebenen Werten ausfÃ¼hrt.
 - `wp nostrsigner restore <file>` â€” Stellt die in `<file>` gespeicherte JSON-Backup-Datei wieder her (Ã¼berschreibt Optionen und user_meta fÃ¼r verschlÃ¼sselte nsec).
 
-Wichtig: Behandeln Sie alle Schlüssel (Master und KEKs) vertraulich. Hinterlegen Sie neue Keys zuerst in `wp-config.php`, bevor Sie Re-Wrap-Vorgänge anstoßen. Erstellen Sie ein Backup, bevor Sie Re-Encrypting/Rollback-Operationen starten.
+Wichtig: Behandeln Sie alle Schlï¿½ssel (Master und KEKs) vertraulich. Hinterlegen Sie neue Keys zuerst in `wp-config.php`, bevor Sie Re-Wrap-Vorgï¿½nge anstoï¿½en. Erstellen Sie ein Backup, bevor Sie Re-Encrypting/Rollback-Operationen starten.
 
 
 ## Wichtige Klarstellungen und Empfehlungen
