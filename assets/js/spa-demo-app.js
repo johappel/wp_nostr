@@ -1,5 +1,5 @@
 import { nip19 } from 'https://esm.sh/nostr-tools@2.7.2?target=es2022';
-import { SimplePool } from 'https://esm.sh/nostr-tools@2.7.2/pool?target=es2022';
+import { configureNostr } from './nostr-app.js';
 
 const cfg = window.NostrSignerConfig || {};
 cfg.defaultRelays = Array.isArray(cfg.defaultRelays) && cfg.defaultRelays.length
@@ -21,8 +21,6 @@ const STORAGE_KEYS = {
   filterScope: 'nostr-spa-filter-scope',
   limit: 'nostr-spa-limit'
 };
-
-const pool = new SimplePool();
 
 const storage = {
   get(key, fallback = null) {
@@ -57,9 +55,9 @@ const state = {
   refreshTimer: null,
   blogPubkey: null,
   userPubkey: null,
-  relayConnections: new Map(),
   activeSubscriptions: []
 };
+let nostr = null;
 
 const ui = {
   loginLink: document.getElementById('login-link'),
@@ -216,34 +214,6 @@ function persistTags() {
   }
 }
 
-async function fetchJson(url, options = {}) {
-  const headers = new Headers(options.headers || {});
-  if (!headers.has('Content-Type') && options.body) {
-    headers.set('Content-Type', 'application/json');
-  }
-  headers.set('Accept', 'application/json');
-  if (cfg.nonce) {
-    headers.set('X-WP-Nonce', cfg.nonce);
-  }
-  const response = await fetch(url, {
-    credentials: 'include',
-    ...options,
-    headers
-  });
-  let payload = null;
-  try {
-    payload = await response.json();
-  } catch (error) {
-    payload = null;
-  }
-  if (!response.ok) {
-    const message = payload && (payload.message || payload.error)
-      ? payload.message || payload.error
-      : `Fehler ${response.status}`;
-    throw new Error(message);
-  }
-  return payload ?? {};
-}
 
 function updateAuthControls() {
   if (state.isLoggedIn) {
@@ -312,7 +282,7 @@ async function loadProfile() {
   ui.profileStatus.hidden = false;
   ui.profileStatusText.textContent = 'Verbinde mit /me ...';
   try {
-    const data = await fetchJson(cfg.meUrl, { method: 'GET' });
+    const data = await nostr.getProfile();
     renderProfile(data);
     showToast('Profil geladen', 'success');
   } catch (error) {
@@ -363,32 +333,16 @@ function renderRelayStatus() {
 async function ensureRelay(url) {
   updateRelayStatus(url, 'connecting');
   try {
-    const relay = await pool.ensureRelay(url);
-    let entry = state.relayConnections.get(url);
-    if (!entry || entry.relay !== relay) {
-      entry = {
-        relay,
-        listenersAttached: false
-      };
-      state.relayConnections.set(url, entry);
-    }
-    if (!entry.listenersAttached && typeof relay.on === 'function') {
-      entry.listenersAttached = true;
-      relay.on('connect', () => updateRelayStatus(url, 'ok'));
-      relay.on('disconnect', () => updateRelayStatus(url, 'offline', 'getrennt'));
-      relay.on('error', (err) => updateRelayStatus(url, 'error', err?.message || 'Unbekannter Fehler'));
-    }
-    if (relay.connected) {
+    const relay = await nostr.ensureRelay(url);
+    if (relay?.connected) {
       updateRelayStatus(url, 'ok');
     }
     return relay;
   } catch (error) {
-    state.relayConnections.delete(url);
     updateRelayStatus(url, 'error', error?.message || 'Verbindungsfehler');
     throw error;
   }
 }
-
 function buildFilter() {
   const filter = {};
   const kindValue = state.filter.kind ? Number(state.filter.kind) : null;
@@ -526,7 +480,7 @@ async function fetchEventsFromRelay(url, filter) {
   try {
     await ensureRelay(url);
     const relayFilter = createRelayFilter(filter);
-    const events = await pool.querySync([url], relayFilter, { maxWait: 5000 });
+    const events = await nostr.fetchEvents(relayFilter, [url], { timeout: 5000 });
     return Array.isArray(events) ? events : [];
   } catch (error) {
     updateRelayStatus(url, 'error', error?.message || 'Verbindungsfehler');
@@ -535,52 +489,52 @@ async function fetchEventsFromRelay(url, filter) {
 }
 
 function clearActiveSubscriptions() {
-  state.activeSubscriptions.forEach((entry) => {
+  state.activeSubscriptions.forEach((unsubscribe) => {
     try {
-      if (entry?.sub?.close) {
-        entry.sub.close();
-      } else if (entry?.sub?.unsub) {
-        entry.sub.unsub();
-      }
+      unsubscribe?.();
     } catch (error) {
-      // ignorieren
+      // ignoriert
     }
   });
   state.activeSubscriptions = [];
-}
-
-async function subscribeToEvents(relayList, filter) {
-  clearActiveSubscriptions();
-  for (const url of relayList) {
-    try {
-      const relay = await ensureRelay(url);
-      if (!relay) {
-        continue;
-      }
-      const relayFilter = createRelayFilter(filter);
-      const subscription = relay.subscribe([relayFilter], {
-        onevent(event) {
-          if (event && event.id) {
-            state.eventsMap.set(event.id, event);
-            renderEvents();
-          }
-        },
-        onclose(reason) {
-          if (reason && reason !== 'closed') {
-            updateRelayStatus(url, 'error', typeof reason === 'string' ? reason : 'Subscription beendet');
-          }
-        },
-        oneose() {
-          updateRelayStatus(url, 'ok');
-        }
-      });
-      state.activeSubscriptions.push({ relay: url, sub: subscription });
-    } catch (error) {
-      updateRelayStatus(url, 'error', error?.message || 'Subscription fehlgeschlagen');
-    }
+  try {
+    nostr?.clearActiveSubscriptions();
+  } catch (error) {
+    // ignoriert
   }
 }
-
+async function subscribeToEvents(relayList, filter) {
+  clearActiveSubscriptions();
+  const relays = Array.isArray(relayList) ? relayList : [];
+  relays.forEach((url) => updateRelayStatus(url, 'connecting'));
+  try {
+    const relayFilter = createRelayFilter(filter);
+    const unsubscribe = await nostr.subscribe(relayFilter, relays, {
+      onEvent(event) {
+        if (event && event.id) {
+          state.eventsMap.set(event.id, event);
+          renderEvents();
+        }
+      },
+      onEose(relayUrl) {
+        updateRelayStatus(relayUrl, 'ok');
+      },
+      onError(error, relayUrl) {
+        updateRelayStatus(relayUrl, 'error', error?.message || 'Fehler');
+      },
+      onClose(reason, relayUrl) {
+        if (reason && reason !== 'closed') {
+          const message = typeof reason === 'string' ? reason : 'Subscription beendet';
+          updateRelayStatus(relayUrl, 'error', message);
+        }
+      }
+    });
+    state.activeSubscriptions.push(unsubscribe);
+  } catch (error) {
+    relays.forEach((url) => updateRelayStatus(url, 'error', error?.message || 'Subscription fehlgeschlagen'));
+    throw error;
+  }
+}
 function loadStoredValues() {
   const storedRelays = storage.get(STORAGE_KEYS.relays, cfg.defaultRelays);
   if (Array.isArray(storedRelays) && storedRelays.length) {
@@ -615,6 +569,9 @@ function loadStoredValues() {
   const storedLimit = storage.get(STORAGE_KEYS.limit, 100);
   state.limit = Number(storedLimit) || 100;
   ui.eventLimit.value = state.limit;
+  if (nostr && state.relays.length) {
+    nostr.updateConfig({ defaultRelays: state.relays });
+  }
 }
 async function refreshEvents() {
   if (state.refreshTimer) {
@@ -672,6 +629,9 @@ function updateRelaysFromInput() {
     return false;
   }
   state.relays = Array.from(new Set(relays));
+  if (nostr) {
+    nostr.updateConfig({ defaultRelays: state.relays });
+  }
   persistFormState();
   state.relayStatus.clear();
   state.relays.forEach((url) => updateRelayStatus(url, 'connecting'));
@@ -728,37 +688,32 @@ async function handleSignRequest(withPublish) {
     tags,
     content
   };
-  const body = JSON.stringify({
-    event: eventPayload,
-    key_type: ui.signAs.value,
-    broadcast: false
-  });
+  const signOptions = { broadcast: false };
   ui.publishButton.disabled = true;
   ui.signOnlyButton.disabled = true;
   ui.publishSummary.textContent = 'Event wird signiert ...';
   ui.publishResults.innerHTML = '';
   ui.publishStatus.hidden = false;
   try {
-    const response = await fetchJson(cfg.signUrl, { method: 'POST', body });
-    if (!response?.event) {
-      throw new Error('Antwort enthaelt kein signiertes Event.');
-    }
+    const signedEvent = await nostr.signEvent(eventPayload, ui.signAs.value, signOptions);
     ui.publishSummary.textContent = 'Event erfolgreich signiert.';
     const eventJson = document.createElement('pre');
     eventJson.className = 'json-output';
-    eventJson.textContent = JSON.stringify(response.event, null, 2);
+    eventJson.textContent = JSON.stringify(signedEvent, null, 2);
     ui.publishResults.appendChild(eventJson);
-    state.eventsMap.set(response.event.id, response.event);
+    state.eventsMap.set(signedEvent.id, signedEvent);
     renderEvents();
     if (withPublish) {
-      const relayResults = await publishEvent(response.event);
+      const relayResults = await publishEvent(signedEvent);
       renderPublishResults(relayResults);
     } else {
       renderPublishResults([]);
     }
     showToast('Event signiert', 'success');
   } catch (error) {
-    ui.publishSummary.textContent = `Fehler: ${error.message}`;
+    ui.publishSummary.textContent = "Fehler: Event konnte nicht signiert werden.";
+    ui.publishResults.innerHTML = '';
+    renderPublishResults([]);
     showToast(error.message, 'error');
   } finally {
     ui.publishButton.disabled = !state.isLoggedIn;
@@ -772,41 +727,29 @@ async function publishEvent(event) {
     return [];
   }
   const relays = Array.from(new Set(state.relays));
-  const results = [];
-  await Promise.all(relays.map(async (relayUrl) => {
-    try {
-      const relay = await ensureRelay(relayUrl);
-      if (!relay) {
-        results.push({ relay: relayUrl, ok: false, reason: 'Verbindung fehlgeschlagen' });
-        return;
+  relays.forEach((url) => updateRelayStatus(url, 'connecting'));
+  try {
+    const results = await nostr.publishEvent(event, relays, {
+      timeout: 10000,
+      onRelayStatus({ relay, status, message }) {
+        if (status === 'ok') {
+          updateRelayStatus(relay, 'ok', message || 'Veroeffentlichung bestaetigt');
+        } else if (status === 'error') {
+          updateRelayStatus(relay, 'error', message || 'Veroeffentlichung fehlgeschlagen');
+        }
       }
-      const ackResult = await Promise.race([
-        relay.publish(event).then((message) => ({
-          ok: true,
-          message: typeof message === 'string' && message.trim().length ? message : 'OK'
-        })),
-        new Promise((resolve) => setTimeout(() => resolve({
-          ok: false,
-          reason: 'Timeout nach 10 Sekunden'
-        }), 10000))
-      ]);
-      if (ackResult.ok) {
-        updateRelayStatus(relayUrl, 'ok', 'Veroeffentlichung bestaetigt');
-        results.push({ relay: relayUrl, ok: true, reason: ackResult.message });
-      } else {
-        const failureReason = ackResult.reason || 'Veroeffentlichung fehlgeschlagen';
-        updateRelayStatus(relayUrl, 'error', failureReason);
-        results.push({ relay: relayUrl, ok: false, reason: failureReason });
-      }
-    } catch (error) {
-      const message = error?.message || 'Verbindungsfehler';
-      updateRelayStatus(relayUrl, 'error', message);
-      results.push({ relay: relayUrl, ok: false, reason: message });
-    }
-  }));
-  return results;
+    });
+    return results.map((item) => ({
+      relay: item.relay,
+      ok: Boolean(item.ok),
+      message: item.ok ? (item.message || 'OK') : undefined,
+      reason: item.ok ? undefined : (item.reason || item.message || 'Veroeffentlichung fehlgeschlagen')
+    }));
+  } catch (error) {
+    relays.forEach((url) => updateRelayStatus(url, 'error', error?.message || 'Veroeffentlichung fehlgeschlagen'));
+    throw error;
+  }
 }
-
 function renderPublishResults(results) {
   if (!results || !results.length) {
     const info = document.createElement('p');
@@ -899,21 +842,32 @@ function registerEventListeners() {
   window.addEventListener('beforeunload', () => {
     clearActiveSubscriptions();
     try {
-      pool.close(state.relays);
+      nostr?.close(state.relays);
     } catch (error) {
-      // ignorieren
+      // ignoriert
     }
-    state.relayConnections.forEach((entry) => {
-      try {
-        entry.relay.close();
-      } catch (innerError) {
-        // ignorieren
-      }
-    });
   });
 }
 
 function init() {
+  nostr = configureNostr({
+    defaultRelays: cfg.defaultRelays,
+    signUrl: cfg.signUrl,
+    meUrl: cfg.meUrl,
+    nonce: cfg.nonce,
+    onRelayStatus({ relay, status, message }) {
+      if (!relay) {
+        return;
+      }
+      if (status === 'ok' || status === 'connect') {
+        updateRelayStatus(relay, 'ok', message);
+      } else if (status === 'disconnect') {
+        updateRelayStatus(relay, 'offline', message || 'getrennt');
+      } else if (status === 'error') {
+        updateRelayStatus(relay, 'error', message || 'Fehler');
+      }
+    }
+  });
   updateAuthControls();
   renderRelayStatus();
   loadStoredValues();
@@ -927,6 +881,37 @@ function init() {
   loadProfile();
 }
 
-document.addEventListener('DOMContentLoaded', init);
+document.addEventListener('DOMContentLoaded', init);('DOMContentLoaded', init);
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
