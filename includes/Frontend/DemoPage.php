@@ -36,17 +36,46 @@ class DemoPage
             exit;
         }
 
+        $default_relays = (array) apply_filters(
+            'nostr_signer_default_relays',
+            [
+                'wss://relay.damus.io',
+                'wss://relay.snort.social',
+            ]
+        );
+
+        $default_relays = array_values(
+            array_filter(
+                array_map(
+                    static fn( $relay ) => is_string( $relay ) ? trim( $relay ) : '',
+                    $default_relays
+                ),
+                static fn( $relay ) => $relay !== ''
+            )
+        );
+
+        if ( empty( $default_relays ) ) {
+            $default_relays = [
+                'wss://relay.damus.io',
+                'wss://relay.snort.social',
+            ];
+        }
+
         $config = [
-            'meUrl'   => rest_url( 'nostr-signer/v1/me' ),
-            'signUrl' => rest_url( 'nostr-signer/v1/sign-event' ),
-            'nonce'   => wp_create_nonce( 'wp_rest' ),
+            'meUrl'         => rest_url( 'nostr-signer/v1/me' ),
+            'signUrl'       => rest_url( 'nostr-signer/v1/sign-event' ),
+            'nonce'         => wp_create_nonce( 'wp_rest' ),
+            'loginUrl'      => wp_login_url( home_url( '/nostr-signer' ) ),
+            'logoutUrl'     => wp_logout_url( home_url( '/nostr-signer' ) ),
+            'apiBase'       => untrailingslashit( rest_url() ),
+            'defaultRelays' => $default_relays,
         ];
 
-        $html_path = NOSTR_SIGNER_PLUGIN_DIR . 'assets/test.html';
+        $html_path = NOSTR_SIGNER_PLUGIN_DIR . 'assets/spa-demo.html';
         $html      = file_get_contents( $html_path );
 
         if ( $html === false ) {
-            wp_die( esc_html__( 'Die Demo-Datei test.html wurde nicht gefunden.', 'nostr-signer' ) );
+            wp_die( esc_html__( 'Die Demo-Datei spa-demo.html wurde nicht gefunden.', 'nostr-signer' ) );
         }
 
         $placeholders = [
@@ -63,4 +92,3 @@ class DemoPage
         exit;
     }
 }
-
