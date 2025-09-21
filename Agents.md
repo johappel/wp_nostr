@@ -4,7 +4,7 @@
 
 ### 1. Globale Anweisungen
 
-**Wichtige Anweisung:** Alle deine Antworten, Kommentare und der generierte Code (sofern Kommentare enthalten sind) müssen auf **Deutsch** verfasst sein. Die gesamte Kommunikation für dieses Projekt erfolgt in deutscher Sprache.
+**Wichtige Anweisung:** Alle deine Antworten, Kommentare und der generierte Code (sofern Kommentare enthalten sind) müssen auf **Deutsch** verfasst sein. Die gesamte Kommunikation für dieses Projekt erfolgt in deutscher Sprache. Alle Inhalte und Codes müssen UTF-8 encodet sein.
 
 ### 2. Projektübersicht
 
