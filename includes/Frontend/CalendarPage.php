@@ -1,25 +1,25 @@
 <?php
+namespace NostrSigner\Frontend; 
 
-namespace NostrSigner\Frontend;
+define( 'NOSTR_CALENDAR_APP_DIR', WP_CONTENT_DIR . '/nostr-apps/nostr-calendar-app/' );
+define( 'NOSTR_CALENDAR_APP_BASE_URL', home_url( '/wp-content/nostr-apps/nostr-calendar-app/' ) );
 
-class DemoPage
+
+class CalendarPage
 {
-    private const QUERY_VAR = 'nostr_signer_demo';
+    private const QUERY_VAR = 'nostr_signer_calendar';
 
     public function boot(): void
     {
         add_action( 'init', [ $this, 'register_rewrite' ] );
         add_filter( 'query_vars', [ $this, 'register_query_var' ] );
-        add_action( 'template_redirect', [ $this, 'maybe_render_demo' ] );
+        add_action( 'template_redirect', [ $this, 'maybe_render' ] );
+        
     }
 
     public function register_rewrite(): void
     {
-        add_rewrite_rule( '^nostr-signer/?$', 'index.php?' . self::QUERY_VAR . '=1', 'top' );
-        add_rewrite_tag( '%' . self::QUERY_VAR . '%', '1' );
-        add_rewrite_rule( '^nostr-sandbox/?$', 'index.php?' . self::QUERY_VAR . '=1', 'top' );
-        add_rewrite_tag( '%' . self::QUERY_VAR . '%', '1' );
-        add_rewrite_rule( '^nostr-test/?$', 'index.php?' . self::QUERY_VAR . '=1', 'top' );
+        add_rewrite_rule( '^nostr-calendar/?$', 'index.php?' . self::QUERY_VAR . '=1', 'top' );
         add_rewrite_tag( '%' . self::QUERY_VAR . '%', '1' );
     }
 
@@ -29,8 +29,9 @@ class DemoPage
         return $vars;
     }
 
-    public function maybe_render_demo(): void
+    public function maybe_render(): void
     {
+        
         if ( (int) get_query_var( self::QUERY_VAR ) !== 1 ) {
             return;
         }
@@ -40,11 +41,13 @@ class DemoPage
             exit;
         }
 
+        
         $default_relays = (array) apply_filters(
             'nostr_signer_default_relays',
             [
-                'wss://relay.damus.io',
-                'wss://relay.snort.social',
+                'wss://relay-rpi.edufeed.org',
+                // 'wss://relay.damus.io',
+                // 'wss://relay.snort.social',
             ]
         );
 
@@ -57,14 +60,14 @@ class DemoPage
                 static fn( $relay ) => $relay !== ''
             )
         );
-
+        
         if ( empty( $default_relays ) ) {
             $default_relays = [
                 'wss://relay.damus.io',
                 'wss://relay.snort.social',
             ];
         }
-
+        
         $config = [
             'meUrl'         => rest_url( 'nostr-signer/v1/me' ),
             'signUrl'       => rest_url( 'nostr-signer/v1/sign-event' ),
@@ -75,21 +78,28 @@ class DemoPage
             'defaultRelays' => $default_relays,
         ];
 
-        // wenn ^nostr-sandbox/?$ dann demo modus
-        if ( preg_match( '#^/nostr-sandbox/?$#', $_SERVER['REQUEST_URI'] ?? '' ) ) {
-            $html_path = NOSTR_SIGNER_PLUGIN_DIR . 'assets/test_nostr_app.html';
-        } else if ( preg_match( '#^/nostr-test/?$#', $_SERVER['REQUEST_URI'] ?? '' ) ) {
-            $html_path = NOSTR_SIGNER_PLUGIN_DIR . 'assets/test.html';
+        if ( preg_match( '#^/nostr-calendar/?$#', $_SERVER['REQUEST_URI'] ?? '' ) ) {
+            $html_path = NOSTR_CALENDAR_APP_DIR . 'index.html';
+            $html      = file_get_contents( $html_path );
+            if ( $html === null ) {
+                wp_die( esc_html__( 'Fehler beim Laden der HTML-Datei.', NOSTR_CALENDAR_APP_BASE_URL . 'index.html' ) );
+                return;
+            }
         } else {
-            $html_path = NOSTR_SIGNER_PLUGIN_DIR . 'assets/spa-demo.html';
+            wp_die( esc_html__( 'Unbekannte Seite', NOSTR_CALENDAR_APP_BASE_URL . '/index.html' ) );
+            return;
         }
-        $html      = file_get_contents( $html_path );
 
         // prepare for relative URLs
 
         // add <base href="https://www.example.com/" /> to head to make relative URLs work
-        $base_tag = '<base href="' . esc_url( NOSTR_SIGNER_PLUGIN_URL ) . '" />';
+        $base_tag = '<base href="' . esc_url( NOSTR_CALENDAR_APP_BASE_URL ) . '" />';
         $html     = preg_replace( '/<head>/', '<head>' . $base_tag, $html, 1 );
+        
+        if ( $html === null ) {
+            wp_die( esc_html__( 'Fehler beim Verarbeiten der HTML-Datei.', NOSTR_CALENDAR_APP_BASE_URL . 'index.html' ) );
+            return;
+        }
 
         // prepare for config injection
 
@@ -107,6 +117,11 @@ class DemoPage
             $script_tags .= 'window.NostrSignerConfig.logoutUrl = ' . wp_json_encode( $config['logoutUrl'] ) . ';';
             $script_tags .= 'window.NostrSignerConfig.apiBase = ' . wp_json_encode( $config['apiBase'] ) . ';';
             $script_tags .= 'window.NostrSignerConfig.defaultRelays = ' . wp_json_encode( $config['defaultRelays'] ) . ';';
+            $script_tags .= 'window.nostrCalendarWP = {};';
+            $script_tags .= 'window.nostrCalendarWP.sso = {"enabled": true};';
+            $script_tags .= '</script>';
+            $script_tags .= '<script type="module">';
+            $script_tags .= 'import { configureNostr, nostr_send, nostr_fetch, nostr_me, nostr_onEvent, login_url, logout_url } from "' . esc_url( NOSTR_SIGNER_PLUGIN_URL ) . 'assets/js/nostr-app.js";';
             $script_tags .= '</script>';
 
             $html = preg_replace( '/<\/head>/', $script_tags . '</head>', $html, 1 );

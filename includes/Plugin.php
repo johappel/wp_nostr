@@ -4,6 +4,7 @@ namespace NostrSigner;
 
 use NostrSigner\Admin\AdminPage;
 use NostrSigner\Frontend\DemoPage;
+use NostrSigner\Frontend\CalendarPage;
 use NostrSigner\Frontend\ProfileIntegration;
 use NostrSigner\Frontend\WellKnownEndpoint;
 use NostrSigner\RelayPublisher;
@@ -31,6 +32,8 @@ class Plugin
     private AdminPage $admin_page;
     private ProfileIntegration $profile_integration;
     private WellKnownEndpoint $well_known_endpoint;
+    private DemoPage $demo_page;
+    private CalendarPage $calendar_page;
 
     private bool $gmp_available;
 
@@ -55,6 +58,7 @@ class Plugin
         $this->rotation_manager    = new RotationManager();
         $this->admin_page          = new AdminPage( $this->nostr_service );
         $this->demo_page           = new DemoPage();
+        $this->calendar_page       = new CalendarPage();
         $this->profile_integration = new ProfileIntegration( $this->key_manager, $this->nostr_service, self::DEFAULT_RELAYS );
         $this->well_known_endpoint = new WellKnownEndpoint( $this->key_manager, $this->nostr_service, self::DEFAULT_RELAYS );
 
@@ -72,6 +76,7 @@ class Plugin
         add_action( 'admin_menu', [ $this->admin_page, 'register_admin_page' ] );
 
         $this->demo_page->boot();
+        $this->calendar_page->boot();
 
         register_activation_hook( NOSTR_SIGNER_PLUGIN_FILE, [ $this, 'handle_activation' ] );
         register_deactivation_hook( NOSTR_SIGNER_PLUGIN_FILE, [ $this, 'handle_deactivation' ] );
@@ -179,6 +184,7 @@ class Plugin
         }
 
         $this->demo_page->register_rewrite();
+        $this->calendar_page->register_rewrite();
         $this->well_known_endpoint->add_rewrite_rule();
         flush_rewrite_rules();
         $this->rotation_manager->schedule_events();

@@ -1,4 +1,4 @@
-import { SimplePool } from 'https://esm.sh/nostr-tools@2.7.2/pool?target=es2022';
+import { SimplePool } from 'https://esm.sh/nostr-tools@2.16.2/pool?target=es2022';
 
 const DEFAULT_RELAYS = ['wss://relay.damus.io', 'wss://relay.snort.social'];
 const DEFAULT_PUBLISH_TIMEOUT = 10000;
@@ -53,6 +53,48 @@ function sanitizeFilter(filter = {}) {
     cleaned.limit = limit;
   }
   return cleaned;
+}
+
+/**
+ * Validiert und bereinigt Event-Tags, um sicherzustellen, dass alle Werte
+ * Strings sind und keine leeren Arrays oder andere ungueltige Typen enthalten.
+ */
+function sanitizeEventTags(tags = []) {
+  if (!Array.isArray(tags)) {
+    return [];
+  }
+
+  return tags
+    .filter((tag) => Array.isArray(tag) && tag.length >= 2)
+    .map((tag) => {
+      const [key, value] = tag;
+
+      // Stelle sicher, dass der Key ein String ist
+      const cleanKey = typeof key === 'string' ? key.trim() : '';
+
+      // Stelle sicher, dass der Value ein String ist
+      let cleanValue;
+      if (typeof value === 'string') {
+        cleanValue = value.trim();
+      } else if (Array.isArray(value)) {
+        // Falls es ein Array ist, konvertiere es zu einem String oder entferne das Tag
+        cleanValue = value.length > 0 ? value.join(',') : '';
+      } else {
+        // Für andere Typen (Number, Boolean, etc.) konvertiere zu String
+        cleanValue = String(value || '').trim();
+      }
+
+      // Nur Tags mit gültigem Key und Value behalten
+      if (cleanKey && cleanValue) {
+        return [cleanKey, cleanValue];
+      } else if (cleanKey) {
+        // Falls nur der Key gültig ist, erstelle ein Tag mit leerem String
+        return [cleanKey, ''];
+      }
+
+      return null;
+    })
+    .filter((tag) => tag !== null);
 }
 
 /**
@@ -206,8 +248,14 @@ export function createNostrClient(options = {}) {
    * signierte Objekt zur weiteren Verarbeitung zurueck.
    */
   async function signEvent(eventData, keyType = 'user', extraPayload = {}) {
+    // Bereinige die Tags vor dem Signieren, falls vorhanden
+    const cleanEventData = { ...eventData };
+    if (Array.isArray(cleanEventData.tags)) {
+      cleanEventData.tags = sanitizeEventTags(cleanEventData.tags);
+    }
+
     const payload = {
-      event: eventData,
+      event: cleanEventData,
       key_type: keyType,
       ...extraPayload
     };
@@ -226,11 +274,14 @@ export function createNostrClient(options = {}) {
    * Aufruf und liefert sowohl Event als auch Ergebnisliste.
    */
   async function send(eventData, keyType = 'user', relays, options = {}) {
+    console.log('send eventData to wordpess endpoint /sign-event', eventData);
     const signedEvent = await signEvent(eventData, keyType, options.signPayload || {});
     if (options.publish === false) {
       return { event: signedEvent, results: [] };
     }
+    console.log('send signedEvent to relays', signedEvent, keyType, relays);
     const results = await publishEvent(signedEvent, relays, options.publishOptions || {});
+    console.log('send results', results);
     return { event: signedEvent, results };
   }
 
@@ -390,11 +441,18 @@ function getSharedClient(config) {
 /**
  * Short-Cut fuer signieren + veroeffentlichen unter Verwendung des
  * geteilten Clients.
+ * keyType: 'user' (Standard) oder 'blog' (fuer Blog-Posts)
+ *  
  * Beispiel:
  * await nostr_send({ kind: 1, content: 'Hallo', tags: [], created_at: Math.floor(Date.now() / 1000) },
  *   'user', ['wss://relay.damus.io'], { publishOptions: { timeout: 8000 } });
  */
 export async function nostr_send(eventData, keyType = 'user', relays, options = {}) {
+  if(!options.clientConfig) {
+    options.clientConfig = {
+      nonce: window.NostrSignerConfig?.nonce || null
+    };
+  }
   const client = getSharedClient(options.clientConfig);
   return client.send(eventData, keyType, relays, options);
 }
@@ -418,6 +476,13 @@ export async function nostr_fetch(filter = {}, relays, options = {}) {
  * const profile = await nostr_me({ clientConfig: { meUrl: '/wp-json/nostr-signer/v1/me' } });
  */
 export async function nostr_me(options = {}) {
+  if(!options.clientConfig) {
+    options.clientConfig = {
+      meUrl: '/wp-json/nostr-signer/v1/me',
+      nonce: window.NostrSignerConfig?.nonce || null
+    };
+  }
+  console.log('nostr_me options', options);
   const client = getSharedClient(options.clientConfig);
   return client.getProfile();
 }
@@ -456,4 +521,12 @@ export async function nostr_onEvent(callback, relays, filter = {}, options = {})
   });
   return unsubscribe;
 }
-
+/** Liefert die Login- und Logout-URLs aus der globalen Konfiguration
+ * oder verwendet Standardwerte, falls nichts definiert ist.
+ */
+export async function login_url() {
+  return window.NostrSignerConfig?.loginUrl || '/wp-login.php';
+}
+export async function logout_url() {
+  return window.NostrSignerConfig?.logoutUrl || '/wp-login.php?action=logout';
+}
