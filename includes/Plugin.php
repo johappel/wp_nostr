@@ -27,6 +27,16 @@ class Plugin
         return is_array( $configured ) ? $configured : self::DEFAULT_RELAYS;
     }
 
+    public function register_relay_filter(): void
+    {
+        add_filter( 'nostr_signer_default_relays', [ $this, 'get_default_relays' ] );
+    }
+
+    public function get_default_relays( array $default_relays ): array
+    {
+        return self::get_configured_relays();
+    }
+
     private static function get_configured_tools_url(): string
     {
         $configured = get_option( 'nostr_signer_tools_url', 'https://cdn.jsdelivr.net/npm/nostr-tools@2.16.2/lib/nostr.bundle.min.js' );
@@ -77,11 +87,13 @@ class Plugin
 
         $this->rotation_manager->register_hooks();
         add_action( 'admin_enqueue_scripts', [ $this, 'register_admin_assets' ], 0 );
+        add_action( 'init', [ $this, 'register_relay_filter' ], 5 );
         $this->profile_integration->boot();
         $this->well_known_endpoint->boot();
 
         add_action( 'admin_notices', [ $this, 'maybe_render_master_key_notice' ] );
         add_action( 'admin_notices', [ $this, 'maybe_render_gmp_notice' ] );
+        add_action( 'wp_ajax_nostr_signer_dismiss_notice', [ $this, 'handle_notice_dismiss' ] );
         add_action( 'plugins_loaded', [ $this, 'init_hooks' ] );
         add_action( 'user_register', [ $this, 'handle_user_register' ], 10, 1 );
         add_action( 'rest_api_init', [ $this->rest_controller, 'register_routes' ] );
@@ -171,8 +183,44 @@ class Plugin
             return;
         }
 
-        $message = __( 'Die PHP-Erweiterung GMP ist nicht aktiv. Die Nostr-Bibliothek benoetigt GMP fuer kryptografische Operationen.', 'nostr-signer' );
-        echo '<div class="notice notice-warning"><p>' . esc_html( $message ) . '</p></div>';
+        // Check if notice was already dismissed
+        $dismissed = get_user_meta( get_current_user_id(), 'nostr_signer_gmp_notice_dismissed', true );
+        if ( $dismissed ) {
+            return;
+        }
+
+        $message = __( 'Die PHP-Erweiterung GMP ist nicht aktiv. Die Nostr-Bibliothek benötigt GMP für kryptografische Operationen. Bitte installieren Sie die GMP-Erweiterung auf Ihrem Server.', 'nostr-signer' );
+
+        echo '<div class="notice notice-warning is-dismissible" data-notice-type="gmp_missing">';
+        echo '<p>' . esc_html( $message ) . '</p>';
+        echo '</div>';
+
+        // Add JavaScript to handle dismiss
+        add_action( 'admin_footer', [ $this, 'add_gmp_dismiss_javascript' ] );
+    }
+
+    public function add_gmp_dismiss_javascript(): void
+    {
+        ?>
+        <script type="text/javascript">
+        jQuery(document).ready(function($) {
+            $('.notice[data-notice-type="gmp_missing"]').on('click', '.notice-dismiss', function() {
+                var notice = $(this).closest('.notice');
+                var noticeType = notice.data('notice-type');
+
+                $.ajax({
+                    url: ajaxurl,
+                    type: 'POST',
+                    data: {
+                        action: 'nostr_signer_dismiss_notice',
+                        notice_type: noticeType,
+                        nonce: '<?php echo wp_create_nonce( 'nostr_signer_dismiss_notice' ); ?>'
+                    }
+                });
+            });
+        });
+        </script>
+        <?php
     }
 
     public function handle_activation(): void
@@ -226,6 +274,29 @@ class Plugin
         }
 
         $this->key_manager->create_keys_for_user( $user_id );
+    }
+
+    public function handle_notice_dismiss(): void
+    {
+        if ( ! wp_verify_nonce( $_POST['nonce'] ?? '', 'nostr_signer_dismiss_notice' ) ) {
+            wp_die( esc_html__( 'Sicherheitsfehler', 'nostr-signer' ) );
+        }
+
+        if ( ! current_user_can( 'manage_options' ) ) {
+            wp_die( esc_html__( 'Keine Berechtigung', 'nostr-signer' ) );
+        }
+
+        $notice_type = sanitize_text_field( $_POST['notice_type'] ?? '' );
+
+        if ( $notice_type === 'key_rotation_success' ) {
+            update_user_meta( get_current_user_id(), 'nostr_signer_key_rotation_notice_dismissed', true );
+        } elseif ( $notice_type === 'gmp_missing' ) {
+            update_user_meta( get_current_user_id(), 'nostr_signer_gmp_notice_dismissed', true );
+        } elseif ( $notice_type === 'plugin_ready' ) {
+            update_user_meta( get_current_user_id(), 'nostr_signer_readiness_notice_dismissed', true );
+        }
+
+        wp_die();
     }
 }
 

@@ -188,8 +188,43 @@ class RotationManager {
             return;
         }
 
-        $message = __( 'Nostr Signer: Alle Envelopes wurden auf zul?ssige Key-Versionen umgewandelt. ?ltere KEKs k?nnen aus der wp-config.php entfernt werden.', 'nostr-signer' );
-        echo '<div class="notice notice-success"><p>' . esc_html( $message ) . '</p></div>';
+        // Check if notice was already dismissed
+        $dismissed = get_user_meta( get_current_user_id(), 'nostr_signer_key_rotation_notice_dismissed', true );
+        if ( $dismissed ) {
+            return;
+        }
+
+        $message = __( 'Nostr Signer: Alle Envelopes wurden auf zulässige Key-Versionen umgewandelt. Ältere KEKs können aus der wp-config.php entfernt werden.', 'nostr-signer' );
+
+        echo '<div class="notice notice-success is-dismissible" data-notice-type="key_rotation_success">';
+        echo '<p>' . esc_html( $message ) . '</p>';
+        echo '</div>';
+
+        // Add JavaScript to handle dismiss
+        add_action( 'admin_footer', [ $this, 'add_dismiss_javascript' ] );
+    }
+
+    public function add_dismiss_javascript(): void {
+        ?>
+        <script type="text/javascript">
+        jQuery(document).ready(function($) {
+            $('.notice[data-notice-type="key_rotation_success"]').on('click', '.notice-dismiss', function() {
+                var notice = $(this).closest('.notice');
+                var noticeType = notice.data('notice-type');
+
+                $.ajax({
+                    url: ajaxurl,
+                    type: 'POST',
+                    data: {
+                        action: 'nostr_signer_dismiss_notice',
+                        notice_type: noticeType,
+                        nonce: '<?php echo wp_create_nonce( 'nostr_signer_dismiss_notice' ); ?>'
+                    }
+                });
+            });
+        });
+        </script>
+        <?php
     }
 
     private function has_outdated_envelopes( int $min_allowed ): bool {

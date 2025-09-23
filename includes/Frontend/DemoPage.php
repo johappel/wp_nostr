@@ -73,6 +73,11 @@ class DemoPage
             'logoutUrl'     => wp_logout_url( home_url( '/nostr-signer' ) ),
             'apiBase'       => untrailingslashit( rest_url() ),
             'defaultRelays' => $default_relays,
+            'userPermissions' => [
+                'canUseProfile' => current_user_can( get_option( 'nostr_signer_profile_role', 'author' ) ),
+                'canSignOwn'    => current_user_can( get_option( 'nostr_signer_sign_own_role', 'author' ) ),
+                'canSignBlog'   => current_user_can( get_option( 'nostr_signer_sign_blog_role', 'editor' ) ),
+            ],
         ];
 
         // wenn ^nostr-sandbox/?$ dann demo modus
@@ -107,6 +112,7 @@ class DemoPage
             $script_tags .= 'window.NostrSignerConfig.logoutUrl = ' . wp_json_encode( $config['logoutUrl'] ) . ';';
             $script_tags .= 'window.NostrSignerConfig.apiBase = ' . wp_json_encode( $config['apiBase'] ) . ';';
             $script_tags .= 'window.NostrSignerConfig.defaultRelays = ' . wp_json_encode( $config['defaultRelays'] ) . ';';
+            $script_tags .= 'window.NostrSignerConfig.userPermissions = ' . wp_json_encode( $config['userPermissions'] ) . ';';
             $script_tags .= '</script>';
 
             $html = preg_replace( '/<\/head>/', $script_tags . '</head>', $html, 1 );

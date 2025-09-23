@@ -108,6 +108,131 @@ class AdminPage
         return 'edit_posts';
     }
 
+    public function maybe_render_success_notice(): void
+    {
+        // Only show on tools tab
+        if ( ! isset( $_GET['tab'] ) || $_GET['tab'] !== 'tools' ) {
+            return;
+        }
+
+        // Check if all conditions are met
+        $conditions_met = $this->check_plugin_readiness();
+
+        if ( ! $conditions_met ) {
+            return;
+        }
+
+        // Check if notice was already dismissed
+        $dismissed = get_user_meta( get_current_user_id(), 'nostr_signer_readiness_notice_dismissed', true );
+        if ( $dismissed ) {
+            return;
+        }
+
+        $message = __( 'Nostr Signer ist vollständig betriebsbereit! Alle Bedingungen sind erfüllt: Schlüsselrotation erfolgreich, Relay-Konfiguration korrekt, GMP verfügbar und keine Fehler bei der Envelope-Umwandlung.', 'nostr-signer' );
+
+        echo '<div class="notice notice-success is-dismissible" data-notice-type="plugin_ready">';
+        echo '<p>' . esc_html( $message ) . '</p>';
+        echo '</div>';
+
+        // Add JavaScript to handle dismiss
+        add_action( 'admin_footer', [ $this, 'add_readiness_dismiss_javascript' ] );
+    }
+
+    private function check_plugin_readiness(): bool
+    {
+        // Check if master key is available
+        if ( ! Crypto::is_master_key_available() ) {
+            return false;
+        }
+
+        // Check if nostr library is available
+        if ( ! $this->nostr_service->is_library_available() ) {
+            return false;
+        }
+
+        // Check if GMP is available
+        if ( ! extension_loaded( 'gmp' ) ) {
+            return false;
+        }
+
+        // Check if relays are configured
+        $relays = get_option( 'nostr_signer_default_relays', [] );
+        if ( empty( $relays ) || ! is_array( $relays ) ) {
+            return false;
+        }
+
+        // Check if blog key exists
+        $blog_npub = get_option( KeyManager::OPTION_BLOG_NPUB );
+        if ( empty( $blog_npub ) ) {
+            return false;
+        }
+
+        // Check if no outdated envelopes exist (successful key rotation)
+        $allowed = Crypto::get_allowed_key_versions();
+        if ( empty( $allowed ) ) {
+            return false;
+        }
+
+        $min_allowed = min( $allowed );
+
+        // Quick check for outdated envelopes
+        $query = new \WP_User_Query(
+            [
+                'number'   => 10,
+                'meta_key' => KeyManager::META_ENCRYPTED_NSEC,
+                'fields'   => [ 'ID' ],
+            ]
+        );
+
+        foreach ( (array) $query->get_results() as $user ) {
+            $cipher = get_user_meta( $user->ID, KeyManager::META_ENCRYPTED_NSEC, true );
+            if ( ! is_string( $cipher ) || $cipher === '' ) {
+                continue;
+            }
+
+            $json = base64_decode( $cipher, true );
+            if ( $json === false ) {
+                continue;
+            }
+
+            $envelope = json_decode( $json, true );
+            if ( ! is_array( $envelope ) || ! isset( $envelope['kv'] ) ) {
+                continue;
+            }
+
+            $version = (int) $envelope['kv'];
+            if ( $version < $min_allowed ) {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    public function add_readiness_dismiss_javascript(): void
+    {
+        ?>
+        <script type="text/javascript">
+        jQuery(document).ready(function($) {
+            $('.notice[data-notice-type="plugin_ready"]').on('click', '.notice-dismiss', function() {
+                var notice = $(this).closest('.notice');
+                var noticeType = notice.data('notice-type');
+
+                $.ajax({
+                    url: ajaxurl,
+                    type: 'POST',
+                    data: {
+                        action: 'nostr_signer_dismiss_notice',
+                        notice_type: noticeType,
+                        nonce: '<?php echo wp_create_nonce( 'nostr_signer_dismiss_notice' ); ?>'
+                    }
+                });
+            });
+        });
+        </script>
+        <?php
+    }
+
     public function enqueue_assets( string $hook ): void
     {
         if ( $this->hook_suffix !== $hook ) {
@@ -197,6 +322,9 @@ class AdminPage
     {
         echo '<div class="wrap">';
         echo '<h1>' . esc_html__( 'Nostr Signer', 'nostr-signer' ) . '</h1>';
+
+        // Show success notice if all conditions are met
+        $this->maybe_render_success_notice();
 
         if ( ! Crypto::is_master_key_available() || ! $this->nostr_service->is_library_available() ) {
             echo '<div class="notice notice-warning"><p>' . esc_html__( 'Die Signierung ist deaktiviert. Bitte stellen Sie sicher, dass der Master-Schluessel gesetzt ist und die Nostr-Bibliothek geladen wurde.', 'nostr-signer' ) . '</p></div>';
