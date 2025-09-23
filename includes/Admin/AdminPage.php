@@ -8,6 +8,13 @@ use NostrSigner\NostrService;
 
 class AdminPage
 {
+    private const DEFAULT_RELAYS = [
+        'wss://relay-rpi.edufeed.org',
+        // 'wss://relay.damus.io',
+        // 'wss://relay.nostr.band',
+        // 'wss://nostr.fmt.wiz.biz',
+    ];
+
     private string $hook_suffix = '';
 
     public function __construct( private NostrService $nostr_service ) {
@@ -15,16 +22,90 @@ class AdminPage
 
     public function register_admin_page(): void
     {
-        $this->hook_suffix = add_menu_page(
+        $this->hook_suffix = add_options_page(
             __( 'Nostr Signer', 'nostr-signer' ),
             __( 'Nostr Signer', 'nostr-signer' ),
             'manage_options',
             'nostr-signer',
-            [ $this, 'render_page' ],
-            'dashicons-shield'
+            [ $this, 'render_page' ]
         );
 
         add_action( 'admin_enqueue_scripts', [ $this, 'enqueue_assets' ] );
+        add_action( 'admin_init', [ $this, 'register_settings' ] );
+    }
+
+    public function register_settings(): void
+    {
+        // Settings section
+        add_settings_section(
+            'nostr_signer_main_section',
+            __( 'Plugin-Konfiguration', 'nostr-signer' ),
+            [ $this, 'render_settings_section' ],
+            'nostr_signer_settings'
+        );
+
+        // Register settings
+        register_setting( 'nostr_signer_settings', 'nostr_signer_default_relays', [
+            'type' => 'array',
+            'sanitize_callback' => [ $this, 'sanitize_relays' ],
+            'default' => self::DEFAULT_RELAYS,
+        ] );
+
+        register_setting( 'nostr_signer_settings', 'nostr_signer_tools_url', [
+            'type' => 'string',
+            'sanitize_callback' => 'esc_url_raw',
+            'default' => 'https://cdn.jsdelivr.net/npm/nostr-tools@2.16.2/lib/nostr.bundle.min.js',
+        ] );
+
+        register_setting( 'nostr_signer_settings', 'nostr_signer_profile_role', [
+            'type' => 'string',
+            'sanitize_callback' => [ $this, 'sanitize_role' ],
+            'default' => 'author',
+        ] );
+
+        register_setting( 'nostr_signer_settings', 'nostr_signer_sign_own_role', [
+            'type' => 'string',
+            'sanitize_callback' => [ $this, 'sanitize_role' ],
+            'default' => 'author',
+        ] );
+
+        register_setting( 'nostr_signer_settings', 'nostr_signer_sign_blog_role', [
+            'type' => 'string',
+            'sanitize_callback' => [ $this, 'sanitize_role' ],
+            'default' => 'editor',
+        ] );
+    }
+
+    public function render_settings_section(): void
+    {
+        echo '<p>' . esc_html__( 'Konfigurieren Sie hier die Standardeinstellungen für das Nostr Signer Plugin.', 'nostr-signer' ) . '</p>';
+    }
+
+    public function sanitize_relays( $input ): array
+    {
+        if ( ! is_array( $input ) ) {
+            $input = explode( "\n", $input );
+        }
+
+        $relays = [];
+        foreach ( $input as $relay ) {
+            $relay = trim( sanitize_text_field( $relay ) );
+            if ( ! empty( $relay ) && filter_var( $relay, FILTER_VALIDATE_URL ) ) {
+                $relays[] = $relay;
+            }
+        }
+
+        return $relays;
+    }
+
+    public function sanitize_role( $input ): string
+    {
+        $roles = wp_roles()->roles;
+        if ( array_key_exists( $input, $roles ) ) {
+            return $input;
+        }
+
+        return 'edit_posts';
     }
 
     public function enqueue_assets( string $hook ): void
@@ -115,12 +196,136 @@ class AdminPage
     public function render_page(): void
     {
         echo '<div class="wrap">';
-        echo '<h1>' . esc_html__( 'Nostr Event Signierer', 'nostr-signer' ) . '</h1>';
+        echo '<h1>' . esc_html__( 'Nostr Signer', 'nostr-signer' ) . '</h1>';
 
         if ( ! Crypto::is_master_key_available() || ! $this->nostr_service->is_library_available() ) {
             echo '<div class="notice notice-warning"><p>' . esc_html__( 'Die Signierung ist deaktiviert. Bitte stellen Sie sicher, dass der Master-Schluessel gesetzt ist und die Nostr-Bibliothek geladen wurde.', 'nostr-signer' ) . '</p></div>';
         }
 
+        // Tab-Navigation
+        echo '<nav class="nav-tab-wrapper">';
+        echo '<a href="#settings" class="nav-tab nav-tab-active">' . esc_html__( 'Einstellungen', 'nostr-signer' ) . '</a>';
+        echo '<a href="#tools" class="nav-tab">' . esc_html__( 'Tools', 'nostr-signer' ) . '</a>';
+        echo '</nav>';
+
+        // Tab-Inhalte
+        echo '<div id="settings" class="tab-content" style="display: block;">';
+        $this->render_settings_tab();
+        echo '</div>';
+
+        echo '<div id="tools" class="tab-content" style="display: none;">';
+        $this->render_tools_tab();
+        echo '</div>';
+
+        echo '</div>';
+
+        // JavaScript für Tab-Navigation
+        echo '<script type="text/javascript">
+        jQuery(document).ready(function($) {
+            $(".nav-tab-wrapper a").click(function(e) {
+                e.preventDefault();
+                var target = $(this).attr("href").substring(1);
+
+                // Tabs ausblenden
+                $(".tab-content").hide();
+
+                // Aktiven Tab anzeigen
+                $("#" + target).show();
+
+                // Aktive Klasse setzen
+                $(".nav-tab").removeClass("nav-tab-active");
+                $(this).addClass("nav-tab-active");
+            });
+        });
+        </script>';
+    }
+
+    private function render_settings_tab(): void
+    {
+        echo '<form method="post" action="options.php">';
+
+        settings_fields( 'nostr_signer_settings' );
+        do_settings_sections( 'nostr_signer_settings' );
+
+        echo '<table class="form-table" role="presentation">';
+        echo '<tbody>';
+
+        // Default Relays
+        echo '<tr>';
+        echo '<th scope="row">' . esc_html__( 'Standard-Relays', 'nostr-signer' ) . '</th>';
+        echo '<td>';
+        echo '<fieldset>';
+        $default_relays = get_option( 'nostr_signer_default_relays', self::DEFAULT_RELAYS );
+        echo '<textarea name="nostr_signer_default_relays" rows="4" cols="50" class="large-text code">' . esc_textarea( implode( "\n", $default_relays ) ) . '</textarea>';
+        echo '<p class="description">' . esc_html__( 'Eine Relay-URL pro Zeile. Diese werden als Standard für neue Events verwendet.', 'nostr-signer' ) . '</p>';
+        echo '</fieldset>';
+        echo '</td>';
+        echo '</tr>';
+
+        // Nostr Tools URL
+        echo '<tr>';
+        echo '<th scope="row">' . esc_html__( 'Nostr-Tools URL', 'nostr-signer' ) . '</th>';
+        echo '<td>';
+        echo '<fieldset>';
+        $nostr_tools_url = get_option( 'nostr_signer_tools_url', 'https://cdn.jsdelivr.net/npm/nostr-tools@2.16.2/lib/nostr.bundle.min.js' );
+        echo '<input type="url" name="nostr_signer_tools_url" value="' . esc_attr( $nostr_tools_url ) . '" class="regular-text" />';
+        echo '<p class="description">' . esc_html__( 'URL zur nostr-tools JavaScript-Bibliothek.', 'nostr-signer' ) . '</p>';
+        echo '</fieldset>';
+        echo '</td>';
+        echo '</tr>';
+
+        // Berechtigungen für Nostr nsec auf Profilseite
+        echo '<tr>';
+        echo '<th scope="row">' . esc_html__( 'Berechtigung: Nostr nsec auf Profilseite', 'nostr-signer' ) . '</th>';
+        echo '<td>';
+        echo '<fieldset>';
+        $profile_role = get_option( 'nostr_signer_profile_role', 'edit_posts' );
+        echo '<select name="nostr_signer_profile_role">';
+        wp_dropdown_roles( $profile_role );
+        echo '</select>';
+        echo '<p class="description">' . esc_html__( 'Mindestrolle für die Bereitstellung einer nostr nsec auf der Profilseite (Standard: ab Autor-Rolle).', 'nostr-signer' ) . '</p>';
+        echo '</fieldset>';
+        echo '</td>';
+        echo '</tr>';
+
+        // Berechtigung für eigene Events signieren
+        echo '<tr>';
+        echo '<th scope="row">' . esc_html__( 'Berechtigung: Eigene Events signieren', 'nostr-signer' ) . '</th>';
+        echo '<td>';
+        echo '<fieldset>';
+        $sign_own_role = get_option( 'nostr_signer_sign_own_role', 'edit_posts' );
+        echo '<select name="nostr_signer_sign_own_role">';
+        wp_dropdown_roles( $sign_own_role );
+        echo '</select>';
+        echo '<p class="description">' . esc_html__( 'Mindestrolle für das Signieren eigener Events (Standard: ab Autor-Rolle).', 'nostr-signer' ) . '</p>';
+        echo '</fieldset>';
+        echo '</td>';
+        echo '</tr>';
+
+        // Berechtigung für Blog Events signieren
+        echo '<tr>';
+        echo '<th scope="row">' . esc_html__( 'Berechtigung: Blog Events signieren', 'nostr-signer' ) . '</th>';
+        echo '<td>';
+        echo '<fieldset>';
+        $sign_blog_role = get_option( 'nostr_signer_sign_blog_role', 'edit_others_posts' );
+        echo '<select name="nostr_signer_sign_blog_role">';
+        wp_dropdown_roles( $sign_blog_role );
+        echo '</select>';
+        echo '<p class="description">' . esc_html__( 'Mindestrolle für das Signieren von Blog-Events (Standard: ab Redakteur-Rolle).', 'nostr-signer' ) . '</p>';
+        echo '</fieldset>';
+        echo '</td>';
+        echo '</tr>';
+
+        echo '</tbody>';
+        echo '</table>';
+
+        submit_button();
+        echo '</form>';
+    }
+
+    private function render_tools_tab(): void
+    {
+        echo '<h2>' . esc_html__( 'Event-Signierung', 'nostr-signer' ) . '</h2>';
         echo '<p>' . esc_html__( 'Geben Sie unten ein Nostr-Event an und signieren Sie es entweder mit Ihrem Benutzerkonto oder mit dem globalen Blog-Schluessel.', 'nostr-signer' ) . '</p>';
 
         echo '<textarea id="nostr-event-content" rows="6" style="width:100%;"></textarea>';
@@ -151,8 +356,6 @@ class AdminPage
             echo '<button type="submit" class="button button-primary">' . esc_html__( 'Blog-nsec speichern', 'nostr-signer' ) . '</button>';
             echo '</form>';
         }
-
-        echo '</div>';
     }
 }
 

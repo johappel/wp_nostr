@@ -21,6 +21,18 @@ class Plugin
         // 'wss://nostr.fmt.wiz.biz',
     ];
 
+    private static function get_configured_relays(): array
+    {
+        $configured = get_option( 'nostr_signer_default_relays', self::DEFAULT_RELAYS );
+        return is_array( $configured ) ? $configured : self::DEFAULT_RELAYS;
+    }
+
+    private static function get_configured_tools_url(): string
+    {
+        $configured = get_option( 'nostr_signer_tools_url', 'https://cdn.jsdelivr.net/npm/nostr-tools@2.16.2/lib/nostr.bundle.min.js' );
+        return is_string( $configured ) ? $configured : 'https://cdn.jsdelivr.net/npm/nostr-tools@2.16.2/lib/nostr.bundle.min.js';
+    }
+
     private static ?Plugin $instance = null;
 
     private NostrService $nostr_service;
@@ -52,15 +64,16 @@ class Plugin
 
         $this->nostr_service       = new NostrService();
         $this->key_manager         = new KeyManager( $this->nostr_service );
-        $this->relay_publisher     = new RelayPublisher( self::DEFAULT_RELAYS );
+        $configured_relays         = self::get_configured_relays();
+        $this->relay_publisher     = new RelayPublisher( $configured_relays );
         $this->rest_controller     = new SignEventController( $this->key_manager, $this->nostr_service, $this->relay_publisher );
         $this->import_controller   = new ImportKeyController( $this->key_manager, $this->nostr_service );
         $this->rotation_manager    = new RotationManager();
         $this->admin_page          = new AdminPage( $this->nostr_service );
         $this->demo_page           = new DemoPage();
         $this->calendar_page       = new CalendarPage();
-        $this->profile_integration = new ProfileIntegration( $this->key_manager, $this->nostr_service, self::DEFAULT_RELAYS );
-        $this->well_known_endpoint = new WellKnownEndpoint( $this->key_manager, $this->nostr_service, self::DEFAULT_RELAYS );
+        $this->profile_integration = new ProfileIntegration( $this->key_manager, $this->nostr_service, $configured_relays );
+        $this->well_known_endpoint = new WellKnownEndpoint( $this->key_manager, $this->nostr_service, $configured_relays );
 
         $this->rotation_manager->register_hooks();
         add_action( 'admin_enqueue_scripts', [ $this, 'register_admin_assets' ], 0 );
@@ -87,7 +100,7 @@ class Plugin
         if ( ! wp_script_is( 'nostr-tools', 'registered' ) ) {
             wp_register_script(
                 'nostr-tools',
-                'https://cdn.jsdelivr.net/npm/nostr-tools@2.16.2/lib/nostr.bundle.min.js',
+                self::get_configured_tools_url(),
                 [],
                 '2.3.1',
                 true
